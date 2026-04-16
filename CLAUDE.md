@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # Run locally
-streamlit run app/main.py
+streamlit run streamlit_app.py
 
 # Lint
 ruff check .
@@ -26,8 +26,9 @@ docker compose up
 ## Structure
 
 ```
+streamlit_app.py   # Entry point — calls app/main.main()
 app/
-  main.py        # Streamlit entry point — all UI lives here
+  main.py        # All UI lives here, wrapped in main()
   skills.py      # Skills class — loads .pkl models from /models/
 data/
   skills_data.csv  # Static CSV, bundled in repo

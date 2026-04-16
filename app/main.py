@@ -20,29 +20,30 @@ def load_skills() -> Skills:
     return Skills()
 
 
-df = load_data()
-skills = load_skills()
+def main() -> None:
+    df = load_data()
+    skills = load_skills()
 
-# ------------------------------------------------------------------
-# Sidebar filters — add dropdowns here once columns are known
-# ------------------------------------------------------------------
-st.sidebar.header("Filters")
-# example:
-# category = st.sidebar.selectbox("Category", df["category"].unique())
+    # ------------------------------------------------------------------
+    # Sidebar filters — add dropdowns here once columns are known
+    # ------------------------------------------------------------------
+    st.sidebar.header("Filters")
+    # example:
+    # category = st.sidebar.selectbox("Category", df["category"].unique())
 
-# ------------------------------------------------------------------
-# Main dashboard
-# ------------------------------------------------------------------
-st.title("Skills Taxonomy Dashboard")
+    # ------------------------------------------------------------------
+    # Main dashboard
+    # ------------------------------------------------------------------
+    st.title("Skills Taxonomy Dashboard")
 
-col1, col2, col3 = st.columns(3)
-col1.metric("Total Records", len(df))
-col2.metric("Features", df.shape[1])
-col3.metric("Models Loaded", len(skills.available_models()))
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Records", len(df))
+    col2.metric("Features", df.shape[1])
+    col3.metric("Models Loaded", len(skills.available_models()))
 
-st.divider()
+    st.divider()
 
-# Add charts below as dashboard takes shape
-# example:
-# fig = px.bar(df, x="skill", y="demand")
-# st.plotly_chart(fig, use_container_width=True)
+    # Add charts below as dashboard takes shape
+    # example:
+    # fig = px.bar(df, x="skill", y="demand")
+    # st.plotly_chart(fig, use_container_width=True)
