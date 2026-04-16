@@ -6,14 +6,6 @@ Streamlit dashboard analyzing 1.3M LinkedIn job postings to surface which skills
 are in demand. Hosted on Streamlit Cloud (unlisted — link-only access). Zero cloud
 cost: data pulled from Kaggle API at runtime and cached in session.
 
-## Team
-
-| Role | Owns |
-|------|------|
-| Member 1 | Architecture, data loading, deployment, ML integration |
-| Member 2 | Data processing, EDA, charts |
-| Member 3 | ML model training, .pkl pipeline |
-
 ## Directory Structure
 
 ```
@@ -30,7 +22,7 @@ skills-dashboard/
 │   ├── train.py                  # Training script (run locally, output .pkl)
 │   └── predict.py                # Load .pkl + run inference
 ├── components/
-│   ├── charts.py                 # Reusable chart functions (matplotlib/seaborn)
+│   ├── charts.py                 # Reusable chart functions (native Streamlit)
 │   └── filters.py                # Sidebar filter widgets
 ├── assets/
 │   └── models/                   # Committed .pkl files
@@ -46,9 +38,9 @@ skills-dashboard/
 Kaggle dataset: `asaniczka/1-3m-linkedin-jobs-and-skills-2024`
 
 Three CSVs:
-- `linkedin_job_postings.csv` — job metadata (title, company, location, description)
-- `job_skills.csv` — job_link → skill mappings
-- `job_industries.csv` — job_link → industry mappings
+- `linkedin_job_postings.csv` — job metadata (title, company, location, job level, job type)
+- `job_skills.csv` — job_link → skill mappings (long format: one row per skill)
+- `job_summary.csv` — job_link → job description text
 
 **Loading strategy** (zero cost):
 1. On app start, check if `/tmp/data/merged.parquet` exists
@@ -65,11 +57,17 @@ provide a toggle for full dataset. Apply sampling before writing parquet to keep
 
 ## Pages
 
-### 01_overview.py — skeleton
+### 01_overview.py
 
 - Sidebar filters: company, location, date range
-- Chart: Top 10 Companies by job count (horizontal bar, seaborn/matplotlib)
-- Stub placeholders for future charts
+- Top 10 job titles (`st.bar_chart`)
+- Job processing time by day of week (`st.bar_chart`)
+- Top 10 companies by job count (`st.bar_chart`)
+- Job level distribution (`st.bar_chart`)
+- Top 10 job locations (`st.bar_chart`)
+- Job postings by hour of day (`st.bar_chart`)
+- Job openings by day of month (`st.bar_chart`)
+- Search position distribution (`st.bar_chart`)
 
 ### 02_skills.py
 
@@ -100,22 +98,24 @@ Pipeline(steps=[
 ])
 ```
 
-Input (`combined_text`): `job_title + job_description + skills`
-Target (`category`): **open decision — see below**
+Input (`combined_text`): `job_title + job_summary + skills`
+Target (`category`): derived from `job_title` via keyword map (8 buckets)
 Artifact: `assets/models/baseline.pkl` (committed to repo)
 
-### Open Decision: `category` Column
+### Category Derivation
 
-The Kaggle dataset has no native `category` label. Two options:
+8 categories derived by keyword matching on `job_title`. Rows that match no bucket are dropped (Option A — keep signal clean).
 
-| Option | Source | Pros | Cons |
-|--------|--------|------|------|
-| Derive from `industry` | `job_industries.csv` join | Semantically rich | Industries are noisy/inconsistent |
-| Derive from `job_type` | `linkedin_job_postings.csv` | Already present | Shallow (Full-time / Contract etc.) |
-
-**Recommendation**: use `industry`, mapped to ~10 coarse buckets
-(e.g. Technology, Finance, Healthcare, Education, etc.).
-Finalize and document the mapping in `data/processor.py`.
+| Category | Example keywords |
+|---|---|
+| TECHNOLOGY | software engineer, devops, cloud engineer, cybersecurity |
+| DATA-ANALYTICS | data analyst, data scientist, business intelligence, ml engineer |
+| MARKETING | marketing manager, seo, content strategist, digital marketing |
+| SALES | account executive, sales representative, bdr, sdr |
+| FINANCE | financial analyst, accountant, fp&a, auditor |
+| HR-OPERATIONS | human resources, recruiter, talent acquisition, supply chain |
+| PRODUCT-DESIGN | product manager, ux designer, product owner |
+| CUSTOMER-SUCCESS | customer success, customer support, technical support |
 
 ## Shared Contracts
 
@@ -124,14 +124,19 @@ Finalize and document the mapping in `data/processor.py`.
 def download_kaggle_data(dest_dir: str) -> None: ...
 
 # data/processor.py
-def load_raw_data(sample_n: int) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: ...
+def load_postings(path: str, sample_n: int) -> pd.DataFrame: ...
+def aggregate_skills(path: str) -> pd.DataFrame: ...
+# groups job_skills.csv (long format) by job_link → list of skills per job
+
+def load_summary(path: str) -> pd.DataFrame: ...
 def merge_datasets(
-    jobs: pd.DataFrame,
-    skills: pd.DataFrame,
-    industries: pd.DataFrame,
+    postings: pd.DataFrame,
+    skills_agg: pd.DataFrame,
+    summary: pd.DataFrame,
 ) -> pd.DataFrame: ...
+def derive_category(title: str) -> str | None: ...
 def build_features(df: pd.DataFrame) -> pd.DataFrame: ...
-# adds: combined_text, skills_list, category
+# adds: combined_text, skills_list, skills_norm, n_skills, *_word_count, category
 
 def get_merged(parquet_path: str, sample_n: int) -> pd.DataFrame: ...
 # checks for parquet → loads it; otherwise runs full pipeline and writes parquet
@@ -163,6 +168,8 @@ pandas
 pyarrow
 scikit-learn
 joblib
+matplotlib
+seaborn
 ```
 
 ## Deployment
@@ -187,6 +194,5 @@ joblib
 - Auth / login
 - Real-time data refresh
 - Database or cloud storage
-- Additional chart pages beyond skeleton stubs
+- Additional chart pages beyond current set
 - Model retraining in-app
-- `category` mapping finalized (open item)
