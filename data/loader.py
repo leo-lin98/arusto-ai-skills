@@ -1,4 +1,23 @@
 import os
+import urllib.request
+
+
+def get_parquet_url() -> str | None:
+    if "PARQUET_URL" in os.environ:
+        return os.environ["PARQUET_URL"]
+    try:
+        import streamlit as st
+
+        return st.secrets.get("PARQUET_URL")
+    except Exception:
+        return None
+
+
+def download_parquet(url: str, dest_path: str) -> None:
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    print("Downloading parquet from R2...")
+    urllib.request.urlretrieve(url, dest_path)
+    print("Parquet downloaded.")
 
 
 def download_kaggle_data(dest_dir: str) -> None:
