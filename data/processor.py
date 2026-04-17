@@ -3,7 +3,7 @@ import re
 
 import pandas as pd
 
-from data.loader import download_parquet, get_parquet_url
+from data.loader import download_kaggle_data
 
 DATA_DIR = "/tmp/data"
 PARQUET_PATH = f"{DATA_DIR}/merged.parquet"
@@ -267,24 +267,21 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _find_csv(data_dir: str, filename: str) -> str:
-    for root, _, files in os.walk(data_dir):
-        if filename in files:
-            return os.path.join(root, filename)
-    raise FileNotFoundError(
-        f"{filename} not found anywhere under {data_dir}. "
-        f"Contents: {list(os.walk(data_dir))}"
-    )
-
-
 def get_merged(parquet_path: str, sample_n: int) -> pd.DataFrame:
     if os.path.exists(parquet_path):
         return pd.read_parquet(parquet_path)
-    parquet_url = get_parquet_url()
-    if parquet_url:
-        download_parquet(parquet_url, parquet_path)
-        return pd.read_parquet(parquet_path)
-    raise FileNotFoundError(
-        f"No parquet at {parquet_path} and PARQUET_URL not set. "
-        "Upload merged.parquet to R2 and set PARQUET_URL in secrets."
-    )
+    print("Downloading Kaggle dataset...")
+    download_kaggle_data(DATA_DIR)
+    print(f"Loading postings (first {sample_n:,} rows)...")
+    postings = load_postings(POSTINGS_PATH, sample_n)
+    job_links = set(postings["job_link"])
+    print(f"Loading skills for {len(job_links):,} jobs...")
+    skills_agg = aggregate_skills(SKILLS_PATH, job_links)
+    print("Loading summaries...")
+    summary = load_summary(SUMMARY_PATH, job_links)
+    df = merge_datasets(postings, skills_agg, summary)
+    df = build_features(df)
+    os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
+    df.to_parquet(parquet_path, index=False)
+    print("Parquet cached.")
+    return df
