@@ -4,14 +4,14 @@ import os
 def download_kaggle_data(dest_dir: str) -> None:
     from kaggle.api.kaggle_api_extended import KaggleApi
 
-    # Prefer env vars; fall back to st.secrets (Streamlit runtime); ~/.kaggle/kaggle.json auto-detected by SDK.
+    # Prefer env vars; fall back to st.secrets; kaggle.json auto-detected by SDK.
     if "KAGGLE_USERNAME" not in os.environ or "KAGGLE_KEY" not in os.environ:
         try:
             import streamlit as st
 
             os.environ["KAGGLE_USERNAME"] = st.secrets["KAGGLE_USERNAME"]
             os.environ["KAGGLE_KEY"] = st.secrets["KAGGLE_KEY"]
-        except Exception:
+        except (ImportError, FileNotFoundError, KeyError):
             pass
 
     api = KaggleApi()

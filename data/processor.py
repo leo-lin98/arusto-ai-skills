@@ -267,32 +267,18 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _find_csv(data_dir: str, filename: str) -> str:
-    for root, _, files in os.walk(data_dir):
-        if filename in files:
-            return os.path.join(root, filename)
-    raise FileNotFoundError(
-        f"{filename} not found anywhere under {data_dir}. "
-        f"Contents: {list(os.walk(data_dir))}"
-    )
-
-
 def get_merged(parquet_path: str, sample_n: int) -> pd.DataFrame:
     if os.path.exists(parquet_path):
         return pd.read_parquet(parquet_path)
-    if not os.path.exists(POSTINGS_PATH):
-        print("Downloading Kaggle dataset...")
-        download_kaggle_data(DATA_DIR)
-    postings_path = _find_csv(DATA_DIR, "linkedin_job_postings.csv")
-    skills_path = _find_csv(DATA_DIR, "job_skills.csv")
-    summary_path = _find_csv(DATA_DIR, "job_summary.csv")
+    print("Downloading Kaggle dataset...")
+    download_kaggle_data(DATA_DIR)
     print(f"Loading postings (first {sample_n:,} rows)...")
-    postings = load_postings(postings_path, sample_n)
+    postings = load_postings(POSTINGS_PATH, sample_n)
     job_links = set(postings["job_link"])
     print(f"Loading skills for {len(job_links):,} jobs...")
-    skills_agg = aggregate_skills(skills_path, job_links)
+    skills_agg = aggregate_skills(SKILLS_PATH, job_links)
     print("Loading summaries...")
-    summary = load_summary(summary_path, job_links)
+    summary = load_summary(SUMMARY_PATH, job_links)
     df = merge_datasets(postings, skills_agg, summary)
     df = build_features(df)
     os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
