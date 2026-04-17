@@ -2,8 +2,6 @@ import re
 
 import pandas as pd
 
-from data.loader import load_parquet_from_r2
-
 DATA_DIR = "/tmp/data"
 PARQUET_PATH = f"{DATA_DIR}/merged.parquet"
 POSTINGS_PATH = f"{DATA_DIR}/linkedin_job_postings.csv"
@@ -264,7 +262,3 @@ def build_features(df: pd.DataFrame) -> pd.DataFrame:
     out["category"] = out["job_title"].apply(derive_category)
 
     return out
-
-
-def get_merged() -> pd.DataFrame:
-    return load_parquet_from_r2()

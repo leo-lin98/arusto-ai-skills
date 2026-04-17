@@ -144,7 +144,6 @@ mount it as a volume.
 | Layer | Mechanism | Scope |
 |---|---|---|
 | R2 → DataFrame | `load_parquet_from_r2()` + `@st.cache_data` | Per Streamlit session |
-| `build_features()` | `@st.cache_data` in each page | Per Streamlit session |
 | `baseline.pkl` | `@st.cache_resource` | Per Streamlit process |
 | Co-occurrence pairs | `@st.cache_data` | Per Streamlit session |
 
