@@ -26,11 +26,16 @@ def compute_cooccurrence(skills_series: pd.Series) -> pd.DataFrame:
         for a, b in combinations(uniq, 2):
             pair_counts[(a, b)] += 1
     return pd.DataFrame(
-        [{"skill_pair": f"{a} + {b}", "count": c} for (a, b), c in pair_counts.most_common(15)]
+        [
+            {"skill_pair": f"{a} + {b}", "count": c}
+            for (a, b), c in pair_counts.most_common(15)
+        ]
     ).set_index("skill_pair")
 
 
-with st.status("Loading data — this may take a few minutes on first run...", expanded=False):
+with st.status(
+    "Loading data — this may take a few minutes on first run...", expanded=False
+):
     df = load_data()
 
 df = df[df["category"].notna()].copy()

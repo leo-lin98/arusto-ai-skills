@@ -20,11 +20,13 @@ from sklearn.pipeline import Pipeline
 
 from data.processor import PARQUET_PATH, SAMPLE_N, build_features, get_merged
 
-MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "models", "baseline.pkl")
+MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "assets", "models", "baseline.pkl"
+)
 
 
 def train() -> Pipeline:
-    df       = get_merged(PARQUET_PATH, SAMPLE_N)
+    df = get_merged(PARQUET_PATH, SAMPLE_N)
     jobs_eda = build_features(df)
     jobs_eda = jobs_eda[jobs_eda["category"].notna()].copy().reset_index(drop=True)
 
@@ -35,26 +37,34 @@ def train() -> Pipeline:
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    baseline = Pipeline(steps=[
-        ("tfidf", TfidfVectorizer(
-            lowercase=True,
-            stop_words="english",
-            ngram_range=(1, 2),
-            min_df=2,
-            max_df=0.9,
-            max_features=50000,
-        )),
-        ("clf", LogisticRegression(
-            max_iter=2000,
-            class_weight="balanced",
-            solver="saga",
-        )),
-    ])
+    baseline = Pipeline(
+        steps=[
+            (
+                "tfidf",
+                TfidfVectorizer(
+                    lowercase=True,
+                    stop_words="english",
+                    ngram_range=(1, 2),
+                    min_df=2,
+                    max_df=0.9,
+                    max_features=50000,
+                ),
+            ),
+            (
+                "clf",
+                LogisticRegression(
+                    max_iter=2000,
+                    class_weight="balanced",
+                    solver="saga",
+                ),
+            ),
+        ]
+    )
 
     param_grid = {
         "tfidf__max_features": [20000, 50000],
-        "tfidf__ngram_range":  [(1, 1), (1, 2)],
-        "clf__C":              [0.5, 1.0, 2.0],
+        "tfidf__ngram_range": [(1, 1), (1, 2)],
+        "clf__C": [0.5, 1.0, 2.0],
     }
 
     search = GridSearchCV(

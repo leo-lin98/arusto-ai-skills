@@ -15,7 +15,9 @@ def load_data() -> pd.DataFrame:
     return get_merged(PARQUET_PATH, SAMPLE_N)
 
 
-with st.status("Loading data — this may take a few minutes on first run...", expanded=False):
+with st.status(
+    "Loading data — this may take a few minutes on first run...", expanded=False
+):
     df = load_data()
 
 df = sidebar_filters(df)
@@ -32,8 +34,18 @@ top_jobs = df["job_title"].value_counts().head(10).rename("Listings")
 st.bar_chart(top_jobs)
 
 st.subheader("Job Processing Time by Day of Week")
-day_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-day_counts = df["day_of_week"].value_counts().reindex(day_order).dropna().rename("Postings")
+day_order = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+]
+day_counts = (
+    df["day_of_week"].value_counts().reindex(day_order).dropna().rename("Postings")
+)
 st.bar_chart(day_counts)
 
 st.subheader("Top 10 Companies by Job Count")
