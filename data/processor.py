@@ -3,7 +3,7 @@ import re
 
 import pandas as pd
 
-from data.loader import download_kaggle_data, download_parquet, get_parquet_url
+from data.loader import download_parquet, get_parquet_url
 
 DATA_DIR = "/tmp/data"
 PARQUET_PATH = f"{DATA_DIR}/merged.parquet"
@@ -284,21 +284,7 @@ def get_merged(parquet_path: str, sample_n: int) -> pd.DataFrame:
     if parquet_url:
         download_parquet(parquet_url, parquet_path)
         return pd.read_parquet(parquet_path)
-    if not os.path.exists(POSTINGS_PATH):
-        print("Downloading Kaggle dataset...")
-        download_kaggle_data(DATA_DIR)
-    postings_path = _find_csv(DATA_DIR, "linkedin_job_postings.csv")
-    skills_path = _find_csv(DATA_DIR, "job_skills.csv")
-    summary_path = _find_csv(DATA_DIR, "job_summary.csv")
-    print(f"Loading postings (first {sample_n:,} rows)...")
-    postings = load_postings(postings_path, sample_n)
-    job_links = set(postings["job_link"])
-    print(f"Loading skills for {len(job_links):,} jobs...")
-    skills_agg = aggregate_skills(skills_path, job_links)
-    print("Loading summaries...")
-    summary = load_summary(summary_path, job_links)
-    df = merge_datasets(postings, skills_agg, summary)
-    os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
-    df.to_parquet(parquet_path, index=False)
-    print("Parquet cached.")
-    return df
+    raise FileNotFoundError(
+        f"No parquet at {parquet_path} and PARQUET_URL not set. "
+        "Upload merged.parquet to R2 and set PARQUET_URL in secrets."
+    )
