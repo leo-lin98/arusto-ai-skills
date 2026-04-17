@@ -30,12 +30,15 @@ def download_parquet(url: str, dest_path: str) -> None:
 def download_kaggle_data(dest_dir: str) -> None:
     from kaggle.api.kaggle_api_extended import KaggleApi
 
-    # Prefer env vars (local train.py); fall back to st.secrets (Streamlit runtime).
+    # Prefer env vars; fall back to st.secrets (Streamlit runtime); ~/.kaggle/kaggle.json auto-detected by SDK.
     if "KAGGLE_USERNAME" not in os.environ or "KAGGLE_KEY" not in os.environ:
-        import streamlit as st
+        try:
+            import streamlit as st
 
-        os.environ["KAGGLE_USERNAME"] = st.secrets["KAGGLE_USERNAME"]
-        os.environ["KAGGLE_KEY"] = st.secrets["KAGGLE_KEY"]
+            os.environ["KAGGLE_USERNAME"] = st.secrets["KAGGLE_USERNAME"]
+            os.environ["KAGGLE_KEY"] = st.secrets["KAGGLE_KEY"]
+        except Exception:
+            pass
 
     api = KaggleApi()
     api.authenticate()
