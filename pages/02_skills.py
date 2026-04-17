@@ -6,15 +6,17 @@ import streamlit as st
 
 from components.charts import skills_frequency_chart
 from components.filters import sidebar_filters
-from data.loader import load_parquet_from_r2
+from data.db import PARQUET_S3_PATH, filter_conditions, get_db_connection
 
 st.set_page_config(page_title="Skills", layout="wide")
 st.title("Skills Analysis")
 
+conn = get_db_connection()
+company, location = sidebar_filters(conn)
 
-@st.cache_data
-def load_data() -> pd.DataFrame:
-    return load_parquet_from_r2()
+conditions, params = filter_conditions(company, location)
+conditions.append("category IS NOT NULL")
+where = f"WHERE {' AND '.join(conditions)}"
 
 
 @st.cache_data
@@ -32,33 +34,56 @@ def compute_cooccurrence(skills_series: pd.Series) -> pd.DataFrame:
     ).set_index("skill_pair")
 
 
-with st.status(
-    "Loading data — this may take a few minutes on first run...", expanded=False
-):
-    df = load_data()
-
-df = df[df["category"].notna()].copy()
-df = sidebar_filters(df)
-
 st.subheader("Top Skills by Frequency")
 n = st.slider("Number of skills", min_value=10, max_value=50, value=25)
-skills_frequency_chart(df, n)
+skills_frequency_chart(conn, n, company, location)
 
 st.divider()
 
 st.subheader("Skills Breakdown by Category")
-categories = sorted(df["category"].dropna().unique().tolist())
+categories = (
+    conn.execute(
+        f"""
+        SELECT DISTINCT category FROM read_parquet('{PARQUET_S3_PATH}')
+        WHERE category IS NOT NULL ORDER BY category
+        """
+    )
+    .df()["category"]
+    .tolist()
+)
 selected_cat = st.selectbox("Category", ["All"] + categories)
 
-filtered = df if selected_cat == "All" else df[df["category"] == selected_cat]
+cat_conditions = list(conditions)
+cat_params = list(params)
+if selected_cat != "All":
+    cat_conditions.append("category = ?")
+    cat_params.append(selected_cat)
+cat_where = f"WHERE {' AND '.join(cat_conditions)}"
 
-all_skills = [s for xs in filtered["skills_norm"] for s in xs]
-counts = Counter(all_skills)
-top_cat_skills = pd.Series(dict(counts.most_common(20)), name="Count")
+top_cat_skills = (
+    conn.execute(
+        f"""
+    SELECT skill, COUNT(*) AS "Count"
+    FROM (
+        SELECT UNNEST(skills_norm) AS skill
+        FROM read_parquet('{PARQUET_S3_PATH}')
+        {cat_where}
+    )
+    GROUP BY skill ORDER BY "Count" DESC LIMIT 20
+    """,
+        cat_params,
+    )
+    .df()
+    .set_index("skill")
+)
 st.bar_chart(top_cat_skills)
 
 st.divider()
 
 st.subheader("Skill Co-occurrence Pairs")
-top_pairs = compute_cooccurrence(df["skills_norm"])
+skills_series = conn.execute(
+    f"SELECT skills_norm FROM read_parquet('{PARQUET_S3_PATH}') {where}",
+    params,
+).df()["skills_norm"]
+top_pairs = compute_cooccurrence(skills_series)
 st.bar_chart(top_pairs)

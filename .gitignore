@@ -3,6 +3,7 @@ __pycache__/
 .env
 .venv
 venv/
+arusto-venv/
 .DS_Store
 .ruff_cache/
 .claude/

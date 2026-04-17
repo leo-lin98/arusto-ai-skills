@@ -10,17 +10,22 @@ R2_KEY = "merged.parquet"
 def _get_r2_credentials() -> tuple[str, str]:
     key_id = os.environ.get("R2_ACCESS_KEY_ID")
     secret = os.environ.get("R2_SECRET_ACCESS_KEY")
+
     if key_id and secret:
         return key_id, secret
+
     try:
         import streamlit as st
 
         key_id = st.secrets.get("R2_ACCESS_KEY_ID")
         secret = st.secrets.get("R2_SECRET_ACCESS_KEY")
+
         if key_id and secret:
             return key_id, secret
+
     except (ImportError, FileNotFoundError, KeyError):
         pass
+
     raise OSError(
         "R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must be set "
         "in environment variables or Streamlit secrets."

@@ -1,36 +1,52 @@
 import matplotlib.pyplot as plt
-import pandas as pd
 import streamlit as st
 
 from components.charts import top_companies_chart
 from components.filters import sidebar_filters
-from data.loader import load_parquet_from_r2
+from data.db import PARQUET_S3_PATH, filter_conditions, get_db_connection
 
 st.set_page_config(page_title="Overview", layout="wide")
 st.title("Overview")
 
+conn = get_db_connection()
+company, location = sidebar_filters(conn)
 
-@st.cache_data
-def load_data() -> pd.DataFrame:
-    return load_parquet_from_r2()
+conditions, params = filter_conditions(company, location)
+where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
-
-with st.status(
-    "Loading data — this may take a few minutes on first run...", expanded=False
-):
-    df = load_data()
-
-df = sidebar_filters(df)
+metrics = conn.execute(
+    f"""
+    SELECT
+        COUNT(*) AS total,
+        COUNT(DISTINCT company) AS companies,
+        COUNT(DISTINCT job_location) AS locations
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    """,
+    params,
+).fetchone()
 
 col1, col2, col3 = st.columns(3)
-col1.metric("Total Postings", f"{len(df):,}")
-col2.metric("Unique Companies", f"{df['company'].nunique():,}")
-col3.metric("Unique Locations", f"{df['job_location'].nunique():,}")
+col1.metric("Total Postings", f"{metrics[0]:,}")
+col2.metric("Unique Companies", f"{metrics[1]:,}")
+col3.metric("Unique Locations", f"{metrics[2]:,}")
 
 st.divider()
 
 st.subheader("Top 10 Job Titles")
-top_jobs = df["job_title"].value_counts().head(10).rename("Listings")
+top_jobs = (
+    conn.execute(
+        f"""
+    SELECT job_title, COUNT(*) AS "Listings"
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    GROUP BY job_title ORDER BY "Listings" DESC LIMIT 10
+    """,
+        params,
+    )
+    .df()
+    .set_index("job_title")
+)
 st.bar_chart(top_jobs)
 
 st.subheader("Job Processing Time by Day of Week")
@@ -43,34 +59,106 @@ day_order = [
     "Saturday",
     "Sunday",
 ]
-day_counts = (
-    df["day_of_week"].value_counts().reindex(day_order).dropna().rename("Postings")
+day_df = (
+    conn.execute(
+        f"""
+    SELECT day_of_week, COUNT(*) AS "Postings"
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    GROUP BY day_of_week
+    """,
+        params,
+    )
+    .df()
+    .set_index("day_of_week")
+    .reindex(day_order)
+    .dropna()
 )
-st.bar_chart(day_counts)
+st.bar_chart(day_df)
 
 st.subheader("Top 10 Companies by Job Count")
-top_companies_chart(df, 10)
+top_companies_chart(conn, 10, company, location)
 
 st.subheader("Job Level Distribution")
-level_counts = df["job_level"].value_counts().rename("Postings")
-st.bar_chart(level_counts)
+level_df = (
+    conn.execute(
+        f"""
+    SELECT job_level, COUNT(*) AS "Postings"
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    GROUP BY job_level ORDER BY "Postings" DESC
+    """,
+        params,
+    )
+    .df()
+    .set_index("job_level")
+)
+st.bar_chart(level_df)
 
 st.subheader("Top 10 Job Locations")
-top_locations = df["job_location"].value_counts().head(10).rename("Postings")
-st.bar_chart(top_locations)
+location_df = (
+    conn.execute(
+        f"""
+    SELECT job_location, COUNT(*) AS "Postings"
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    GROUP BY job_location ORDER BY "Postings" DESC LIMIT 10
+    """,
+        params,
+    )
+    .df()
+    .set_index("job_location")
+)
+st.bar_chart(location_df)
 
 st.subheader("Job Postings by Hour of Day")
-hourly = df["hour"].value_counts().sort_index().rename("Postings")
-st.bar_chart(hourly)
+hourly_df = (
+    conn.execute(
+        f"""
+    SELECT hour, COUNT(*) AS "Postings"
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    GROUP BY hour ORDER BY hour
+    """,
+        params,
+    )
+    .df()
+    .set_index("hour")
+)
+st.bar_chart(hourly_df)
 
 st.subheader("Job Openings by Day of Month")
+days = (
+    conn.execute(
+        f"""
+    SELECT day FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    LIMIT 10000
+    """,
+        params,
+    )
+    .df()["day"]
+    .dropna()
+)
 fig, ax = plt.subplots(figsize=(10, 4))
-ax.violinplot(df["day"].dropna().head(10000), vert=False)
+ax.violinplot(days, vert=False)
 ax.set_xlabel("Day of Month")
 ax.set_title("Distribution of Job Openings by Day of Month")
 st.pyplot(fig)
 plt.close(fig)
 
 st.subheader("Search Position Distribution")
-search_counts = df.groupby("search_position").size().head(20).rename("Postings")
-st.bar_chart(search_counts)
+search_df = (
+    conn.execute(
+        f"""
+    SELECT search_position, COUNT(*) AS "Postings"
+    FROM read_parquet('{PARQUET_S3_PATH}')
+    {where}
+    GROUP BY search_position ORDER BY search_position LIMIT 20
+    """,
+        params,
+    )
+    .df()
+    .set_index("search_position")
+)
+st.bar_chart(search_df)
