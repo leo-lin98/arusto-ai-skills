@@ -30,7 +30,8 @@ streamlit_app.py              # Entry point — multipage nav
 pages/
   01_overview.py              # Job market overview: titles, companies, locations, time
   02_skills.py                # Skills frequency, category breakdown, co-occurrence
-  03_model.py                 # Course recommendations
+  03_model.py                 # Job category predictor + model evaluation
+  04_courses.py               # Course opportunity recommendations (DuckDB + R2)
 data/
   processor.py                # Full pipeline: load → merge → build_features → stream to R2
   loader.py                   # R2 loader (reads env vars or st.secrets)

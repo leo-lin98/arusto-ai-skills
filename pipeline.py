@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import tempfile
 
-from data.loader import download_kaggle_data, upload_parquet_to_r2
+from data.loader import _get_s3_client, download_kaggle_data, upload_parquet_to_r2
 from data.processor import (
     build_features,
     build_label_rollup,
@@ -39,11 +39,12 @@ def main() -> None:
         skill_bundles = build_skill_bundle_pairs(skills_raw)
 
         print("Uploading to R2...")
-        upload_parquet_to_r2(featured, "merged.parquet")
-        upload_parquet_to_r2(topic_rankings, "topic_rankings.parquet")
-        upload_parquet_to_r2(label_rollup, "label_rollup.parquet")
-        upload_parquet_to_r2(skill_theme_map, "skill_theme_map.parquet")
-        upload_parquet_to_r2(skill_bundles, "skill_bundles.parquet")
+        s3 = _get_s3_client()
+        upload_parquet_to_r2(featured, "merged.parquet", s3)
+        upload_parquet_to_r2(topic_rankings, "topic_rankings.parquet", s3)
+        upload_parquet_to_r2(label_rollup, "label_rollup.parquet", s3)
+        upload_parquet_to_r2(skill_theme_map, "skill_theme_map.parquet", s3)
+        upload_parquet_to_r2(skill_bundles, "skill_bundles.parquet", s3)
         print("Done.")
 
 

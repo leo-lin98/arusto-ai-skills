@@ -16,12 +16,16 @@ R2_ENDPOINT_HOST: str = (
 R2_BUCKET: str = os.environ.get("R2_BUCKET_NAME", "arusto-skills")
 
 
-@st.cache_resource
-def get_db() -> duckdb.DuckDBPyConnection:
+def _get_r2_credentials() -> tuple[str, str]:
     key_id = os.environ.get("R2_ACCESS_KEY_ID") or st.secrets.get("R2_ACCESS_KEY_ID", "")
     secret = os.environ.get("R2_SECRET_ACCESS_KEY") or st.secrets.get("R2_SECRET_ACCESS_KEY", "")
     if not key_id or not secret:
         raise ValueError("R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must be set in .env or Streamlit secrets")
+    return key_id, secret
+
+
+def _new_db_connection() -> duckdb.DuckDBPyConnection:
+    key_id, secret = _get_r2_credentials()
     con = duckdb.connect()
     con.execute("INSTALL httpfs; LOAD httpfs;")
     con.execute(f"""
@@ -32,6 +36,13 @@ def get_db() -> duckdb.DuckDBPyConnection:
         SET s3_url_style='path';
     """)
     return con
+
+
+@st.cache_resource
+def get_db() -> duckdb.DuckDBPyConnection:
+    # one connection per Streamlit process; each @st.cache_data query runs sequentially
+    # so this is safe — DuckDB connections are not thread-safe
+    return _new_db_connection()
 
 
 def _r2(key: str) -> str:

@@ -47,19 +47,23 @@ def load_parquet_from_r2() -> pd.DataFrame:
     )
 
 
-def upload_parquet_to_r2(df: pd.DataFrame, key: str) -> None:
+def _get_s3_client() -> boto3.client:
     key_id, secret = _get_r2_credentials()
-    buf = io.BytesIO()
-    df.to_parquet(buf, index=False, engine="pyarrow")
-    buf.seek(0)
-    s3 = boto3.client(
+    return boto3.client(
         "s3",
         endpoint_url=R2_ENDPOINT,
         aws_access_key_id=key_id,
         aws_secret_access_key=secret,
         region_name="auto",
     )
-    s3.upload_fileobj(buf, R2_BUCKET, key)
+
+
+def upload_parquet_to_r2(df: pd.DataFrame, key: str, s3: boto3.client | None = None) -> None:
+    client = s3 or _get_s3_client()
+    buf = io.BytesIO()
+    df.to_parquet(buf, index=False, engine="pyarrow")
+    buf.seek(0)
+    client.upload_fileobj(buf, R2_BUCKET, key)
     print(f"Uploaded {key} ({len(df):,} rows)")
 
 
