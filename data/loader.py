@@ -5,6 +5,7 @@ import os
 
 import boto3
 import pandas as pd
+from botocore.exceptions import ClientError
 
 R2_ENDPOINT = "https://a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com"
 R2_BUCKET = "arusto-skills"
@@ -67,6 +68,23 @@ def upload_parquet_to_r2(df: pd.DataFrame, key: str, s3: boto3.client | None = N
     buf.seek(0)
     client.upload_fileobj(buf, R2_BUCKET, key)
     print(f"Uploaded {key} ({len(df):,} rows)")
+
+
+def exists_in_r2(key: str, s3: boto3.client) -> bool:
+    try:
+        s3.head_object(Bucket=R2_BUCKET, Key=key)
+        return True
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "404":
+            return False
+        raise
+
+
+def upload_parquet_if_missing(df: pd.DataFrame, key: str, s3: boto3.client) -> None:
+    if exists_in_r2(key, s3):
+        print(f"Skipping {key} (already exists in R2)")
+        return
+    upload_parquet_to_r2(df, key, s3)
 
 
 def download_kaggle_data(dest_dir: str) -> None:

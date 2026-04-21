@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import tempfile
 
-import boto3
-from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-from data.loader import R2_BUCKET, _get_s3_client, download_kaggle_data, upload_parquet_to_r2
+load_dotenv()
+
+from data.loader import _get_s3_client, download_kaggle_data, upload_parquet_if_missing
 from data.processor import (
     build_features,
     build_label_rollup,
@@ -18,25 +18,7 @@ from data.processor import (
 )
 
 
-def _exists_in_r2(key: str, s3: boto3.client) -> bool:
-    try:
-        s3.head_object(Bucket=R2_BUCKET, Key=key)
-        return True
-    except ClientError as e:
-        if e.response["Error"]["Code"] == "404":
-            return False
-        raise
-
-
-def _upload_if_missing(df, key: str, s3: boto3.client) -> None:
-    if _exists_in_r2(key, s3):
-        print(f"Skipping {key} (already exists in R2)")
-        return
-    upload_parquet_to_r2(df, key, s3)
-
-
 def main() -> None:
-    load_dotenv()
     with tempfile.TemporaryDirectory() as tmpdir:
         print("Downloading Kaggle dataset...")
         download_kaggle_data(tmpdir)
@@ -62,11 +44,11 @@ def main() -> None:
 
         print("Uploading to R2...")
         s3 = _get_s3_client()
-        _upload_if_missing(featured, "merged.parquet", s3)
-        _upload_if_missing(topic_rankings, "topic_rankings.parquet", s3)
-        _upload_if_missing(label_rollup, "label_rollup.parquet", s3)
-        _upload_if_missing(skill_theme_map, "skill_theme_map.parquet", s3)
-        _upload_if_missing(skill_bundles, "skill_bundles.parquet", s3)
+        upload_parquet_if_missing(featured, "merged.parquet", s3)
+        upload_parquet_if_missing(topic_rankings, "topic_rankings.parquet", s3)
+        upload_parquet_if_missing(label_rollup, "label_rollup.parquet", s3)
+        upload_parquet_if_missing(skill_theme_map, "skill_theme_map.parquet", s3)
+        upload_parquet_if_missing(skill_bundles, "skill_bundles.parquet", s3)
         print("Done.")
 
 
