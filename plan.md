@@ -5,8 +5,8 @@
 Streamlit dashboard surfacing labor market intelligence from 1.3M LinkedIn job postings
 (`asaniczka/1-3m-linkedin-jobs-and-skills-2024` on Kaggle). Pipeline downloads raw CSVs,
 samples 200k postings, derives job categories via keyword matching, normalizes skills, and
-trains a TF-IDF + Logistic Regression classifier offline. The dashboard has three pages:
-market overview, skills analysis, and a live job category predictor.
+trains a TF-IDF +  classifier offline. The dashboard has three pages:
+market overview, skills analysis, and a live job category predictor. Finally, we will recommend on what classes should be built
 
 ---
 
@@ -19,7 +19,7 @@ arusto-skills-taxonomy/
 ├── pages/
 │   ├── 01_overview.py            # Job market overview: titles, companies, locations, time
 │   ├── 02_skills.py              # Skills frequency, category breakdown, co-occurrence
-│   └── 03_model.py               # Job category predictor + model evaluation
+│   └── 03_model.py               # What courses should be built
 │
 ├── data/
 │   ├── processor.py              # Full pipeline: load → merge → build_features → parquet
@@ -39,7 +39,6 @@ arusto-skills-taxonomy/
 │
 ├── .streamlit/
 │   ├── config.toml               # Theme
-│   └── secrets.toml.example      # KAGGLE_USERNAME, KAGGLE_KEY, PARQUET_URL template
 │
 ├── Dockerfile
 ├── docker-compose.yml
@@ -64,7 +63,7 @@ Kaggle dataset: `asaniczka/1-3m-linkedin-jobs-and-skills-2024`
 
 ## Data Flow
 
-### Offline pipeline (already completed)
+### Offline pipeline
 
 ```
 Kaggle CSVs (raw, ~several GB)
@@ -75,53 +74,65 @@ data/processor.py::get_merged()
   ├── aggregate_skills()    chunked read, filter to sampled job_links, groupby → list
   └── load_summary()        chunked read, filter to sampled job_links
         │
-        ▼
-/tmp/data/merged.parquet
+        ▼ merged in-memory (no local disk write)
         │
         ▼
 data/processor.py::build_features()
   ├── derived columns: job_title_len, n_skills, combined_text, skills_norm
-  └── category: keyword match on job_title → 8 buckets (see below)
+  ├── category: weakly supervised (seed keywords → TF-IDF char-ngram + SGD classifier)
+  │     └── seed themes: 9 themes + "Domain / Other" (see SEED_KEYWORDS table)
+  ├── course_opportunity_score: 0.40×volume + 0.35×salary_proxy + 0.25×breadth
+  │     ├── each metric Min-Max scaled to [0, 1] before applying weights
+  │     ├── salary_proxy: 0.40×remote_rate + 0.25×hybrid_rate + 0.35×senior_rate
+  │     └── breadth: 0.50×city_diversity + 0.50×company_diversity
+  └── opportunity_label: High Opportunity (≥60) / Emerging (≥40) / Saturated (<40)
+        │
+        ▼ serialise to in-memory buffer (io.BytesIO) → stream directly to R2
+  ├── topic_rankings.parquet
+  ├── label_rollup.parquet
+  ├── skill_theme_map.parquet
+  └── skill_bundles.parquet
         │
         ▼
-/tmp/data/merged.parquet  (features already included)
-        │
-        ▼
-uploaded to Cloudflare R2: arusto-skills/merged.parquet  ✅
+Cloudflare R2: arusto-skills/ (all 7 parquets — no local disk write)
 ```
 
 ### App (production)
 
 ```
-Cloudflare R2: arusto-skills/merged.parquet
+Cloudflare R2 (S3 API)
         │
-        ▼
-data/loader.py::load_parquet_from_r2()   ← reads into memory, no disk write
+        ├──▶ data/db.py::get_db_connection()
+        │      └── DuckDB mounts R2 via `httpfs` extension. 
+        │      └── NO full file download.
         │
-        ├──▶ pages/01_overview.py
-        ├──▶ pages/02_skills.py
-        └──▶ pages/03_model.py   (+ baseline.pkl)
+        ├──▶ components/charts.py & filters.py
+        │      └── Executes SQL (`SELECT skill, COUNT...`)
+        │      └── DuckDB uses HTTP Range Requests to fetch ONLY required Parquet columns.
+        │      └── Returns tiny, aggregated Pandas DataFrames to the UI.
+        │
+        └──▶ models/predict.py::load_model_from_r2()
+               └── Fetches baseline.pkl into memory for live predictions.
 ```
 
 ---
 
 ## Job Category Derivation
 
-No category label exists in the raw data. Categories are derived by keyword matching on
-`job_title`:
-
-| Category | Example keywords |
-|---|---|
-| TECHNOLOGY | software engineer, devops, cloud engineer, cybersecurity |
-| DATA-ANALYTICS | data scientist, data engineer, machine learning engineer |
-| MARKETING | seo, content strategist, digital marketing, copywriter |
-| SALES | account executive, bdr, sales manager, solutions engineer |
-| FINANCE | financial analyst, fp&a, auditor, portfolio manager |
-| HR-OPERATIONS | recruiter, talent acquisition, supply chain, payroll |
-| PRODUCT-DESIGN | product manager, ux designer, product owner |
-| CUSTOMER-SUCCESS | customer success, help desk, support engineer |
-
-Rows with no keyword match are dropped before model training and skills analysis.
+⏺ | Theme | Seed Keywords |                                                                                                            
+  |---|---|                                                                                                                            
+  | Communication & Collaboration | communication, written, verbal, presentation, stakeholder, teamwork, collaboration, interpersonal,
+  customer service, client, documentation |                                                                                            
+  | Problem Solving & Critical Thinking | problem, problem solving, problemsolving, troubleshooting, debug, analysis, critical         
+  thinking, root cause, decision |                                                                                                     
+  | Adaptability & Learning Agility | adaptability, flexible, fast learner, learning, change |
+  | Project & Program Management | project, program, agile, scrum, planning, roadmap, coordination, schedule |                         
+  | Data & Analytics | data, analytics, excel, sql, statistics, dashboard, power bi, tableau, reporting |                              
+  | Software & Cloud | python, java, javascript, react, aws, azure, gcp, cloud, devops, docker, kubernetes |
+  | Sales, Marketing & Customer | sales, marketing, business development, crm, lead generation, account, customer success |            
+  | Operations & Quality | operations, logistics, supply chain, inventory, warehouse, quality, safety, compliance |                    
+  | Leadership & People Management | leadership, management, coaching, mentoring, hiring, recruiting, performance |
+  | Domain / Other | *(ML classifier handles — no seed keywords)* |  
 
 ---
 
@@ -129,7 +140,7 @@ Rows with no keyword match are dropped before model training and skills analysis
 
 **File:** `assets/models/baseline.pkl`
 **Train:** `python models/train.py` (run locally, not in the app)
-**Pipeline:** `TfidfVectorizer(ngram_range=(1,2), max_features=50k) → LogisticRegression`
+**Pipeline:** `TF-IDF char-ngram → SGD classifier`
 **Input:** `combined_text` = job_title + job_summary + skills
 **Output:** one of the 8 categories above
 **Selection:** GridSearchCV over `max_features`, `ngram_range`, `C` — best by `f1_macro`
@@ -141,24 +152,25 @@ mount it as a volume.
 
 ## Caching Strategy
 
+Do not cache the raw Parquet file in Streamlit. Instead:
+
 | Layer | Mechanism | Scope |
 |---|---|---|
-| R2 → DataFrame | `load_parquet_from_r2()` + `@st.cache_data` | Per Streamlit session |
+| DuckDB connection | `@st.cache_resource` | Per Streamlit process |
+| Parameterized query functions | `@st.cache_data` | Per unique set of params |
 | `baseline.pkl` | `@st.cache_resource` | Per Streamlit process |
-| Co-occurrence pairs | `@st.cache_data` | Per Streamlit session |
 
-Cold start reads parquet from R2 into memory (~20s). No ephemeral disk dependency.
+DuckDB acts as the query engine against R2 on the fly. `@st.cache_data` is applied only on aggregated query functions (e.g. `get_top_skills(category="Software")`). DuckDB uses HTTP Range Requests so only required columns are fetched from R2 — no full parquet download.
 
 ---
 
 ## Cloudflare R2 Parquet Cache (implemented)
 
-Replaced the Kaggle download path with a pre-built parquet in R2:
+Replaced the Kaggle download path with pre-built parquets in R2:
 
-1. ✅ Pipeline run locally → `merged.parquet` generated
-2. ✅ Uploaded to Cloudflare R2 (`arusto-skills/merged.parquet`, private bucket)
-3. App reads directly from R2 into memory via `load_parquet_from_r2()` — cold start drops from ~5min to ~20s
-4. Kaggle credentials no longer needed in production
+1. Pipeline run locally → 3 source parquets + 4 derived parquets generated
+2. Uploaded to Cloudflare R2 (`arusto-skills/`, private bucket)
+3. App queries directly from R2 via DuckDB `httpfs` — no full download
 
 **Credentials:** `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` — set in env vars or Streamlit secrets.
 
