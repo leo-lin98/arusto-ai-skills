@@ -71,7 +71,7 @@ def get_totals() -> dict[str, int]:
 
 
 @st.cache_data
-def get_top_skills(n: int = 20) -> pd.DataFrame:
+def get_top_skills(n: int) -> pd.DataFrame:
     con = get_db()
     return con.execute(f"""
         SELECT skill, skill_count
@@ -82,28 +82,22 @@ def get_top_skills(n: int = 20) -> pd.DataFrame:
 
 
 @st.cache_data
-def get_topic_rankings(label: str = "All", top_n: int = 50) -> pd.DataFrame:
+def get_topic_rankings(label: str, top_n: int) -> pd.DataFrame:
     con = get_db()
-    if label == "All":
-        return con.execute(f"""
-            SELECT rank, course_topic, course_opportunity_score, opportunity_label,
-                   volume, salary_proxy, breadth_score, trend_30d
-            FROM read_parquet('{_r2("topic_rankings.parquet")}')
-            ORDER BY rank
-            LIMIT {top_n}
-        """).df()
+    where = "" if label == "All" else "WHERE opportunity_label = ?"
+    params: list[str] = [] if label == "All" else [label]
     return con.execute(f"""
         SELECT rank, course_topic, course_opportunity_score, opportunity_label,
                volume, salary_proxy, breadth_score, trend_30d
         FROM read_parquet('{_r2("topic_rankings.parquet")}')
-        WHERE opportunity_label = ?
+        {where}
         ORDER BY rank
         LIMIT {top_n}
-    """, [label]).df()
+    """, params).df()
 
 
 @st.cache_data
-def get_top_topics_chart(top_n: int = 20) -> pd.DataFrame:
+def get_top_topics_chart(top_n: int) -> pd.DataFrame:
     con = get_db()
     return con.execute(f"""
         SELECT course_topic, course_opportunity_score, opportunity_label
@@ -125,7 +119,7 @@ def get_volume_vs_salary() -> pd.DataFrame:
 
 
 @st.cache_data
-def get_trend_top(top_n: int = 15) -> pd.DataFrame:
+def get_trend_top(top_n: int) -> pd.DataFrame:
     con = get_db()
     return con.execute(f"""
         SELECT course_topic, trend_30d
@@ -136,10 +130,10 @@ def get_trend_top(top_n: int = 15) -> pd.DataFrame:
 
 
 @st.cache_data
-def get_job_explorer(search: str = "", label: str = "All") -> pd.DataFrame:
+def get_job_explorer(search: str, label: str) -> pd.DataFrame:
     con = get_db()
     conditions: list[str] = []
-    params: list[str] = []
+    params: list[str | float] = []
     if search:
         conditions.append("LOWER(course_topic) LIKE ?")
         params.append(f"%{search.lower()}%")
@@ -168,7 +162,7 @@ def get_label_rollup() -> pd.DataFrame:
 
 
 @st.cache_data
-def get_skill_themes(min_confidence: float = 0.6) -> pd.DataFrame:
+def get_skill_themes(min_confidence: float) -> pd.DataFrame:
     con = get_db()
     return con.execute(f"""
         SELECT skill, skill_count, ml_theme, ml_confidence
@@ -180,7 +174,7 @@ def get_skill_themes(min_confidence: float = 0.6) -> pd.DataFrame:
 
 
 @st.cache_data
-def get_theme_counts(min_confidence: float = 0.6) -> pd.DataFrame:
+def get_theme_counts(min_confidence: float) -> pd.DataFrame:
     con = get_db()
     return con.execute(f"""
         SELECT ml_theme,
@@ -201,6 +195,23 @@ def get_skill_bundles() -> pd.DataFrame:
         FROM read_parquet('{_r2("skill_bundles.parquet")}')
         ORDER BY cooccur_count DESC
     """).df()
+
+
+@st.cache_data
+def get_cooccurrence_pivot(top_n: int) -> pd.DataFrame:
+    bundles = get_skill_bundles()
+    top_skills = (
+        pd.concat([bundles["skill_a"], bundles["skill_b"]])
+        .value_counts()
+        .head(top_n)
+        .index.tolist()
+    )
+    heat_df = bundles[
+        bundles["skill_a"].isin(top_skills) & bundles["skill_b"].isin(top_skills)
+    ]
+    return heat_df.pivot_table(
+        index="skill_a", columns="skill_b", values="cooccur_count", fill_value=0
+    )
 
 
 st.set_page_config(page_title="Course Opportunity", layout="wide")
@@ -231,24 +242,21 @@ with tabs[0]:
     col_l, col_r = st.columns(2)
 
     with col_l:
-        st.subheader("Top 20 most mentioned skills")
-        top_skills = get_top_skills(20)
-        st.bar_chart(top_skills.set_index("skill")["skill_count"], height=400)
+        st.subheader(f"Top {top_n} most mentioned skills")
+        st.bar_chart(get_top_skills(top_n).set_index("skill")["skill_count"], height=400)
 
     with col_r:
-        st.subheader("Top 20 course topics by opportunity score")
-        top_topics = get_top_topics_chart(20)
+        st.subheader(f"Top {top_n} course topics by opportunity score")
         st.bar_chart(
-            top_topics.set_index("course_topic")["course_opportunity_score"],
+            get_top_topics_chart(top_n).set_index("course_topic")["course_opportunity_score"],
             height=400,
         )
 
     st.divider()
     st.subheader("Volume vs salary proxy (top 100 topics)")
     st.caption("Bubble size not supported in st.scatter_chart — point = 1 topic")
-    scatter_df = get_volume_vs_salary()
     st.scatter_chart(
-        scatter_df,
+        get_volume_vs_salary(),
         x="volume",
         y="salary_proxy",
         color="opportunity_label",
@@ -256,9 +264,8 @@ with tabs[0]:
     )
 
     st.divider()
-    st.subheader("30-day trend — fastest growing topics")
-    trend_df = get_trend_top(15)
-    st.bar_chart(trend_df.set_index("course_topic")["trend_30d"], height=300)
+    st.subheader(f"30-day trend — top {top_n} fastest growing topics")
+    st.bar_chart(get_trend_top(top_n).set_index("course_topic")["trend_30d"], height=300)
 
     st.divider()
     st.subheader("Job explorer")
@@ -307,27 +314,14 @@ with tabs[1]:
 
 with tabs[2]:
     st.subheader("Skill co-occurrence heatmap (top 15 skills)")
-    bundles = get_skill_bundles()
-    top_skills_set = (
-        pd.concat([bundles["skill_a"], bundles["skill_b"]])
-        .value_counts()
-        .head(15)
-        .index.tolist()
-    )
-    heat_df = bundles[
-        bundles["skill_a"].isin(top_skills_set) & bundles["skill_b"].isin(top_skills_set)
-    ].copy()
-    pivot = heat_df.pivot_table(
-        index="skill_a", columns="skill_b", values="cooccur_count", fill_value=0
-    )
     st.dataframe(
-        pivot.style.background_gradient(cmap="Blues"),
+        get_cooccurrence_pivot(15).style.background_gradient(cmap="Blues"),
         use_container_width=True,
     )
 
     st.divider()
     st.subheader("Skill bundling evidence (co-occurrence pairs)")
-    st.dataframe(bundles, use_container_width=True, hide_index=True)
+    st.dataframe(get_skill_bundles(), use_container_width=True, hide_index=True)
     st.caption(
         "Skills like communication, problem solving, and adaptability co-occur as bundles — "
         "supporting bundled course design."
