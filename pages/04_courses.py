@@ -84,15 +84,22 @@ def get_top_skills(n: int = 20) -> pd.DataFrame:
 @st.cache_data
 def get_topic_rankings(label: str = "All", top_n: int = 50) -> pd.DataFrame:
     con = get_db()
-    where = "" if label == "All" else f"WHERE opportunity_label = '{label}'"
+    if label == "All":
+        return con.execute(f"""
+            SELECT rank, course_topic, course_opportunity_score, opportunity_label,
+                   volume, salary_proxy, breadth_score, trend_30d
+            FROM read_parquet('{_r2("topic_rankings.parquet")}')
+            ORDER BY rank
+            LIMIT {top_n}
+        """).df()
     return con.execute(f"""
         SELECT rank, course_topic, course_opportunity_score, opportunity_label,
                volume, salary_proxy, breadth_score, trend_30d
         FROM read_parquet('{_r2("topic_rankings.parquet")}')
-        {where}
+        WHERE opportunity_label = ?
         ORDER BY rank
         LIMIT {top_n}
-    """).df()
+    """, [label]).df()
 
 
 @st.cache_data
@@ -132,12 +139,13 @@ def get_trend_top(top_n: int = 15) -> pd.DataFrame:
 def get_job_explorer(search: str = "", label: str = "All") -> pd.DataFrame:
     con = get_db()
     conditions: list[str] = []
+    params: list[str] = []
     if search:
-        safe = search.replace("'", "''")
-        conditions.append(f"LOWER(course_topic) LIKE '%{safe.lower()}%'")
+        conditions.append("LOWER(course_topic) LIKE ?")
+        params.append(f"%{search.lower()}%")
     if label != "All":
-        safe_label = label.replace("'", "''")
-        conditions.append(f"opportunity_label = '{safe_label}'")
+        conditions.append("opportunity_label = ?")
+        params.append(label)
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     return con.execute(f"""
         SELECT rank, course_topic, course_opportunity_score, opportunity_label,
@@ -146,7 +154,7 @@ def get_job_explorer(search: str = "", label: str = "All") -> pd.DataFrame:
         {where}
         ORDER BY rank
         LIMIT 200
-    """).df()
+    """, params).df()
 
 
 @st.cache_data
@@ -165,10 +173,10 @@ def get_skill_themes(min_confidence: float = 0.6) -> pd.DataFrame:
     return con.execute(f"""
         SELECT skill, skill_count, ml_theme, ml_confidence
         FROM read_parquet('{_r2("skill_theme_map.parquet")}')
-        WHERE ml_confidence >= {min_confidence}
+        WHERE ml_confidence >= ?
         ORDER BY skill_count DESC
         LIMIT 300
-    """).df()
+    """, [min_confidence]).df()
 
 
 @st.cache_data
@@ -179,10 +187,10 @@ def get_theme_counts(min_confidence: float = 0.6) -> pd.DataFrame:
                COUNT(*) AS n_skills,
                SUM(skill_count) AS total_mentions
         FROM read_parquet('{_r2("skill_theme_map.parquet")}')
-        WHERE ml_confidence >= {min_confidence}
+        WHERE ml_confidence >= ?
         GROUP BY ml_theme
         ORDER BY total_mentions DESC
-    """).df()
+    """, [min_confidence]).df()
 
 
 @st.cache_data
