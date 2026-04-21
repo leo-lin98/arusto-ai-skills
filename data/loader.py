@@ -1,5 +1,7 @@
+import io
 import os
 
+import boto3
 import pandas as pd
 
 R2_ENDPOINT = "https://a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com"
@@ -43,6 +45,22 @@ def load_parquet_from_r2() -> pd.DataFrame:
         f"s3://{R2_BUCKET}/{R2_KEY}",
         storage_options=storage_options,
     )
+
+
+def upload_parquet_to_r2(df: pd.DataFrame, key: str) -> None:
+    key_id, secret = _get_r2_credentials()
+    buf = io.BytesIO()
+    df.to_parquet(buf, index=False, engine="pyarrow")
+    buf.seek(0)
+    s3 = boto3.client(
+        "s3",
+        endpoint_url=R2_ENDPOINT,
+        aws_access_key_id=key_id,
+        aws_secret_access_key=secret,
+        region_name="auto",
+    )
+    s3.upload_fileobj(buf, R2_BUCKET, key)
+    print(f"Uploaded {key} ({len(df):,} rows)")
 
 
 def download_kaggle_data(dest_dir: str) -> None:
