@@ -52,23 +52,21 @@ def main() -> None:
         with timed("Train skill theme model"):
             vec, clf = train_skill_theme_model(skills_raw)
 
-        with timed("Build features"):
-            featured = build_features(merged, vec, clf)
-
-        with timed("Score topics"):
-            topic_rankings = score_topics(featured)
-        print(f"     {len(topic_rankings):,} qualifying topics")
-
-        # three derived tables are independent — threads avoid IPC cost of processes
-        with timed("Build derived tables (parallel)"):
-            with ThreadPoolExecutor(max_workers=3) as pool:
-                fut_rollup  = pool.submit(build_label_rollup,    topic_rankings)
+        # skill tables only need skills_raw + vec/clf — start them immediately so they
+        # overlap with the build_features → score_topics → label_rollup chain
+        with timed("Build features + derived tables (parallel)"):
+            with ThreadPoolExecutor(max_workers=2) as pool:
                 fut_themes  = pool.submit(build_skill_theme_map, skills_raw, vec, clf)
                 fut_bundles = pool.submit(build_skill_bundle_pairs, skills_raw)
 
-                label_rollup    = fut_rollup.result()
+                featured       = build_features(merged, vec, clf)
+                topic_rankings = score_topics(featured)
+                label_rollup   = build_label_rollup(topic_rankings)
+
                 skill_theme_map = fut_themes.result()
                 skill_bundles   = fut_bundles.result()
+
+        print(f"     {len(topic_rankings):,} qualifying topics")
 
         # uploads are pure I/O — one s3 client per thread (boto3 not thread-safe)
         uploads = [

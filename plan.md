@@ -91,13 +91,10 @@ build_features()
   │     └── breadth: 0.50×city_diversity + 0.50×company_diversity
   └── opportunity_label: High Opportunity (≥60) / Emerging (≥40) / Saturated (<40)
         │
-        ▼ sequential
-score_topics()              → topic_rankings
-        │
-        ▼ parallel (ThreadPoolExecutor, max_workers=3) — independent, GIL-releasing ops
-  ├── build_label_rollup(topic_rankings)
-  ├── build_skill_theme_map(skills_raw, vec, clf)
-  └── build_skill_bundle_pairs(skills_raw)
+        ▼ parallel (ThreadPoolExecutor, max_workers=2) — skill tables only need skills_raw+vec/clf
+  ├── [main thread]  build_features() → score_topics() → build_label_rollup()
+  ├── [thread 1]     build_skill_theme_map(skills_raw, vec, clf)
+  └── [thread 2]     build_skill_bundle_pairs(skills_raw)
         │
         ▼ parallel uploads (ThreadPoolExecutor, max_workers=5) — pure I/O, one client per thread
   ├── merged.parquet
