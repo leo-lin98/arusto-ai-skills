@@ -8,3 +8,4 @@ arusto-venv/
 .ruff_cache/
 .claude/
 .streamlit/secrets.toml
+plan.md

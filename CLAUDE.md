@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `arusto-skills-taxonomy` — Streamlit dashboard surfacing labor market intelligence from 1.3M LinkedIn job postings. Answers: "What courses should institutions build next?" Python 3.12.
 
+## Environment
+
+Conda env: `arusto-skills` (Python 3.12, managed by miniforge at `/opt/homebrew/Caskroom/miniforge/base`).
+
+```bash
+conda activate arusto-skills
+```
+
+Always activate before running any command locally. All tools (ruff, streamlit, python) must be run from this env.
+
 ## Commands
 
 ```bash
