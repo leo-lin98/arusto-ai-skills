@@ -17,6 +17,7 @@ company, location = sidebar_filters(conn)
 
 _SKILL_BUNDLES_PATH = f"s3://{R2_BUCKET}/skill_bundles.parquet"
 _COOCCURRENCE_SAMPLE = 50_000
+_HEATMAP_SKILLS = 15
 
 
 @st.cache_data
@@ -64,15 +65,11 @@ def get_top_cat_skills(
 
 @st.cache_data
 def get_cooccurrence_precomputed(_conn: object) -> pd.DataFrame:
-    rows = _conn.execute(f"""
-        SELECT skill_a || ' + ' || skill_b AS skill_pair, cooccur_count AS count
+    return _conn.execute(f"""
+        SELECT skill_a, skill_b, cooccur_count
         FROM read_parquet('{_SKILL_BUNDLES_PATH}')
         ORDER BY cooccur_count DESC
-        LIMIT 15
     """).df()
-    if rows.empty:
-        return pd.DataFrame(columns=["count"])
-    return rows.set_index("skill_pair")
 
 
 @st.cache_data
@@ -105,12 +102,31 @@ def get_cooccurrence_filtered(
             pair_counts[(a, b)] += 1
 
     rows = [
-        {"skill_pair": f"{a} + {b}", "count": c}
-        for (a, b), c in pair_counts.most_common(15)
+        {"skill_a": a, "skill_b": b, "cooccur_count": c}
+        for (a, b), c in pair_counts.most_common(100)
     ]
     if not rows:
-        return pd.DataFrame(columns=["count"])
-    return pd.DataFrame(rows).set_index("skill_pair")
+        return pd.DataFrame(columns=["skill_a", "skill_b", "cooccur_count"])
+    return pd.DataFrame(rows)
+
+
+def _build_pivot(bundles: pd.DataFrame, top_n: int) -> pd.DataFrame:
+    if bundles.empty:
+        return pd.DataFrame()
+    top_skills = (
+        pd.concat([bundles["skill_a"], bundles["skill_b"]])
+        .value_counts()
+        .head(top_n)
+        .index.tolist()
+    )
+    filtered = bundles[
+        bundles["skill_a"].isin(top_skills) & bundles["skill_b"].isin(top_skills)
+    ]
+    if filtered.empty:
+        return pd.DataFrame()
+    return filtered.pivot_table(
+        index="skill_a", columns="skill_b", values="cooccur_count", fill_value=0
+    )
 
 
 st.subheader("Top Skills by Frequency")
@@ -126,12 +142,24 @@ st.bar_chart(get_top_cat_skills(conn, company, location, selected_cat))
 
 st.divider()
 
-st.subheader("Skill Co-occurrence Pairs")
+st.subheader("Skill Co-occurrence Heatmap")
 if company == "All" and location == "All":
-    st.caption("Top 15 pairs from precomputed dataset (1.3M postings).")
-    st.bar_chart(get_cooccurrence_precomputed(conn))
+    st.caption(
+        f"Top {_HEATMAP_SKILLS} skills by co-occurrence — precomputed from full dataset."  # noqa: E501
+    )
+    bundles = get_cooccurrence_precomputed(conn)
 else:
     st.caption(
-        f"Top 15 pairs sampled from up to {_COOCCURRENCE_SAMPLE:,} filtered postings."
+        f"Top {_HEATMAP_SKILLS} skills by co-occurrence — "
+        f"sampled from up to {_COOCCURRENCE_SAMPLE:,} filtered postings."
     )
-    st.bar_chart(get_cooccurrence_filtered(conn, company, location))
+    bundles = get_cooccurrence_filtered(conn, company, location)
+
+pivot = _build_pivot(bundles, _HEATMAP_SKILLS)
+if pivot.empty:
+    st.info("Not enough co-occurrence data to render heatmap.")
+else:
+    st.dataframe(
+        pivot.style.background_gradient(cmap="Blues"),
+        use_container_width=True,
+    )
