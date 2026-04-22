@@ -1,48 +1,14 @@
 from __future__ import annotations
 
-import os
-
-import duckdb
 import pandas as pd
 import streamlit as st
-from dotenv import load_dotenv
 
-load_dotenv()
+from data.db import get_db_connection
+from data.loader import R2_BUCKET
 
-R2_ENDPOINT_HOST: str = (
-    os.environ.get("R2_ENDPOINT_URL", "https://a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com")
-    .replace("https://", "")
-)
-R2_BUCKET: str = os.environ.get("R2_BUCKET_NAME", "arusto-skills")
-
-
-def _get_r2_credentials() -> tuple[str, str]:
-    key_id = os.environ.get("R2_ACCESS_KEY_ID") or st.secrets.get("R2_ACCESS_KEY_ID", "")
-    secret = os.environ.get("R2_SECRET_ACCESS_KEY") or st.secrets.get("R2_SECRET_ACCESS_KEY", "")
-    if not key_id or not secret:
-        raise ValueError("R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY must be set in .env or Streamlit secrets")
-    return key_id, secret
-
-
-def _new_db_connection() -> duckdb.DuckDBPyConnection:
-    key_id, secret = _get_r2_credentials()
-    con = duckdb.connect()
-    con.execute("INSTALL httpfs; LOAD httpfs;")
-    con.execute(f"""
-        SET s3_region='auto';
-        SET s3_endpoint='{R2_ENDPOINT_HOST}';
-        SET s3_access_key_id='{key_id}';
-        SET s3_secret_access_key='{secret}';
-        SET s3_url_style='path';
-    """)
-    return con
-
-
-@st.cache_resource
-def get_db() -> duckdb.DuckDBPyConnection:
-    # one connection per Streamlit process; each @st.cache_data query runs sequentially
-    # so this is safe — DuckDB connections are not thread-safe
-    return _new_db_connection()
+st.set_page_config(page_title="Course Opportunity", layout="wide")
+st.title("Course Opportunity Dashboard")
+st.caption('Anchor question: "What courses should institutions build next?"')
 
 
 def _r2(key: str) -> str:
@@ -51,7 +17,7 @@ def _r2(key: str) -> str:
 
 @st.cache_data
 def get_totals() -> dict[str, int]:
-    con = get_db()
+    con = get_db_connection()
     row = con.execute(f"""
         SELECT
             SUM(volume) AS total_jobs,
@@ -72,7 +38,7 @@ def get_totals() -> dict[str, int]:
 
 @st.cache_data
 def get_top_skills(n: int) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT skill, skill_count
         FROM read_parquet('{_r2("skill_theme_map.parquet")}')
@@ -83,7 +49,7 @@ def get_top_skills(n: int) -> pd.DataFrame:
 
 @st.cache_data
 def get_topic_rankings(label: str, top_n: int) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     where = "" if label == "All" else "WHERE opportunity_label = ?"
     params: list[str] = [] if label == "All" else [label]
     return con.execute(f"""
@@ -98,7 +64,7 @@ def get_topic_rankings(label: str, top_n: int) -> pd.DataFrame:
 
 @st.cache_data
 def get_top_topics_chart(top_n: int) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT course_topic, course_opportunity_score, opportunity_label
         FROM read_parquet('{_r2("topic_rankings.parquet")}')
@@ -109,7 +75,7 @@ def get_top_topics_chart(top_n: int) -> pd.DataFrame:
 
 @st.cache_data
 def get_volume_vs_salary() -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT course_topic, volume, salary_proxy, breadth_score, opportunity_label
         FROM read_parquet('{_r2("topic_rankings.parquet")}')
@@ -120,7 +86,7 @@ def get_volume_vs_salary() -> pd.DataFrame:
 
 @st.cache_data
 def get_trend_top(top_n: int) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT course_topic, trend_30d
         FROM read_parquet('{_r2("topic_rankings.parquet")}')
@@ -131,7 +97,7 @@ def get_trend_top(top_n: int) -> pd.DataFrame:
 
 @st.cache_data
 def get_job_explorer(search: str, label: str) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     conditions: list[str] = []
     params: list[str | float] = []
     if search:
@@ -153,7 +119,7 @@ def get_job_explorer(search: str, label: str) -> pd.DataFrame:
 
 @st.cache_data
 def get_label_rollup() -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT *
         FROM read_parquet('{_r2("label_rollup.parquet")}')
@@ -163,7 +129,7 @@ def get_label_rollup() -> pd.DataFrame:
 
 @st.cache_data
 def get_skill_themes(min_confidence: float) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT skill, skill_count, ml_theme, ml_confidence
         FROM read_parquet('{_r2("skill_theme_map.parquet")}')
@@ -175,7 +141,7 @@ def get_skill_themes(min_confidence: float) -> pd.DataFrame:
 
 @st.cache_data
 def get_theme_counts(min_confidence: float) -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT ml_theme,
                COUNT(*) AS n_skills,
@@ -189,7 +155,7 @@ def get_theme_counts(min_confidence: float) -> pd.DataFrame:
 
 @st.cache_data
 def get_skill_bundles() -> pd.DataFrame:
-    con = get_db()
+    con = get_db_connection()
     return con.execute(f"""
         SELECT skill_a, skill_b, cooccur_count
         FROM read_parquet('{_r2("skill_bundles.parquet")}')
@@ -213,10 +179,6 @@ def get_cooccurrence_pivot(top_n: int) -> pd.DataFrame:
         index="skill_a", columns="skill_b", values="cooccur_count", fill_value=0
     )
 
-
-st.set_page_config(page_title="Course Opportunity", layout="wide")
-st.title("Course Opportunity Dashboard")
-st.caption('Anchor question: "What courses should institutions build next?"')
 
 st.sidebar.header("Filters")
 top_n = st.sidebar.slider("Show top N topics", min_value=10, max_value=100, value=50, step=5)
