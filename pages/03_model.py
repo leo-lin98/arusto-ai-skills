@@ -6,6 +6,7 @@ import seaborn as sns
 import streamlit as st
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
 
 from data.db import PARQUET_S3_PATH, get_db_connection
 from models.predict import load_model, predict_category
@@ -19,12 +20,12 @@ MODEL_PATH = os.path.join(
 
 
 @st.cache_resource
-def get_model():
+def get_model() -> Pipeline:
     return load_model(MODEL_PATH)
 
 
 @st.cache_data
-def load_test_split() -> tuple:
+def load_test_split() -> tuple[pd.Series, pd.Series]:
     conn = get_db_connection()
     df = conn.execute(
         f"""

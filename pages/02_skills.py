@@ -14,22 +14,70 @@ st.title("Skills Analysis")
 conn = get_db_connection()
 company, location = sidebar_filters(conn)
 
-conditions, params = filter_conditions(company, location)
-conditions.append("category IS NOT NULL")
-where = f"WHERE {' AND '.join(conditions)}"
+
+@st.cache_data
+def get_categories(_conn: object) -> list[str]:
+    return (
+        _conn.execute(
+            f"""
+            SELECT DISTINCT category FROM read_parquet('{PARQUET_S3_PATH}')
+            WHERE category IS NOT NULL ORDER BY category
+            """
+        )
+        .df()["category"]
+        .tolist()
+    )
 
 
 @st.cache_data
-def compute_cooccurrence(skills_series: pd.Series) -> pd.DataFrame:
+def get_top_cat_skills(
+    _conn: object, company: str, location: str, category: str
+) -> pd.DataFrame:
+    conditions, params = filter_conditions(company, location)
+    conditions.append("category IS NOT NULL")
+    if category != "All":
+        conditions.append("category = ?")
+        params.append(category)
+    cat_where = f"WHERE {' AND '.join(conditions)}"
+    return (
+        _conn.execute(
+            f"""
+        SELECT skill, COUNT(*) AS "Count"
+        FROM (
+            SELECT TRIM(UNNEST(string_split(skills_norm, ','))) AS skill
+            FROM read_parquet('{PARQUET_S3_PATH}')
+            {cat_where}
+        )
+        WHERE skill IS NOT NULL AND TRIM(skill) != '' AND LOWER(TRIM(skill)) != 'nan'
+        GROUP BY skill ORDER BY "Count" DESC LIMIT 20
+        """,
+            params,
+        )
+        .df()
+        .set_index("skill")
+    )
+
+
+@st.cache_data
+def get_cooccurrence(_conn: object, company: str, location: str) -> pd.DataFrame:
+    conditions, params = filter_conditions(company, location)
+    conditions.append("category IS NOT NULL")
+    where = f"WHERE {' AND '.join(conditions)}"
+    skills_series = _conn.execute(
+        f"SELECT skills_norm FROM read_parquet('{PARQUET_S3_PATH}') {where}",
+        params,
+    ).df()["skills_norm"]
+
     pair_counts: Counter = Counter()
     for xs in skills_series:
         if isinstance(xs, list):
-            skills = [s.strip() for s in xs if s and s.strip() and s.strip() != 'nan']
+            skills = [s.strip() for s in xs if s and s.strip() and s.strip() != "nan"]
         else:
-            skills = [s.strip() for s in str(xs).split(",") if s.strip() and s.strip() != 'nan']
+            skills = [s.strip() for s in str(xs).split(",") if s.strip() and s.strip() != "nan"]
         uniq = sorted(set(skills))[:40]
         for a, b in combinations(uniq, 2):
             pair_counts[(a, b)] += 1
+
     rows = [
         {"skill_pair": f"{a} + {b}", "count": c}
         for (a, b), c in pair_counts.most_common(15)
@@ -46,50 +94,11 @@ skills_frequency_chart(conn, n, company, location)
 st.divider()
 
 st.subheader("Skills Breakdown by Category")
-categories = (
-    conn.execute(
-        f"""
-        SELECT DISTINCT category FROM read_parquet('{PARQUET_S3_PATH}')
-        WHERE category IS NOT NULL ORDER BY category
-        """
-    )
-    .df()["category"]
-    .tolist()
-)
+categories = get_categories(conn)
 selected_cat = st.selectbox("Category", ["All"] + categories)
-
-cat_conditions = list(conditions)
-cat_params = list(params)
-if selected_cat != "All":
-    cat_conditions.append("category = ?")
-    cat_params.append(selected_cat)
-cat_where = f"WHERE {' AND '.join(cat_conditions)}"
-
-top_cat_skills = (
-    conn.execute(
-        f"""
-    SELECT skill, COUNT(*) AS "Count"
-    FROM (
-        SELECT UNNEST(skills_norm) AS skill
-        FROM read_parquet('{PARQUET_S3_PATH}')
-        {cat_where}
-    )
-    WHERE skill IS NOT NULL AND TRIM(skill) != '' AND LOWER(TRIM(skill)) != 'nan'
-    GROUP BY skill ORDER BY "Count" DESC LIMIT 20
-    """,
-        cat_params,
-    )
-    .df()
-    .set_index("skill")
-)
-st.bar_chart(top_cat_skills)
+st.bar_chart(get_top_cat_skills(conn, company, location, selected_cat))
 
 st.divider()
 
 st.subheader("Skill Co-occurrence Pairs")
-skills_series = conn.execute(
-    f"SELECT skills_norm FROM read_parquet('{PARQUET_S3_PATH}') {where}",
-    params,
-).df()["skills_norm"]
-top_pairs = compute_cooccurrence(skills_series)
-st.bar_chart(top_pairs)
+st.bar_chart(get_cooccurrence(conn, company, location))

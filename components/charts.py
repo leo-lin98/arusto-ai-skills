@@ -36,7 +36,7 @@ def skills_frequency_chart(
             f"""
         SELECT skill, COUNT(*) AS "Count"
         FROM (
-            SELECT UNNEST(skills_norm) AS skill
+            SELECT TRIM(UNNEST(string_split(skills_norm, ','))) AS skill
             FROM read_parquet('{PARQUET_S3_PATH}')
             {where}
         )
