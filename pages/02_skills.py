@@ -7,12 +7,16 @@ import streamlit as st
 from components.charts import skills_frequency_chart
 from components.filters import sidebar_filters
 from data.db import PARQUET_S3_PATH, filter_conditions, get_db_connection
+from data.loader import R2_BUCKET
 
 st.set_page_config(page_title="Skills", layout="wide")
 st.title("Skills Analysis")
 
 conn = get_db_connection()
 company, location = sidebar_filters(conn)
+
+_SKILL_BUNDLES_PATH = f"s3://{R2_BUCKET}/skill_bundles.parquet"
+_COOCCURRENCE_SAMPLE = 50_000
 
 
 @st.cache_data
@@ -59,12 +63,31 @@ def get_top_cat_skills(
 
 
 @st.cache_data
-def get_cooccurrence(_conn: object, company: str, location: str) -> pd.DataFrame:
+def get_cooccurrence_precomputed(_conn: object) -> pd.DataFrame:
+    rows = _conn.execute(f"""
+        SELECT skill_a || ' + ' || skill_b AS skill_pair, cooccur_count AS count
+        FROM read_parquet('{_SKILL_BUNDLES_PATH}')
+        ORDER BY cooccur_count DESC
+        LIMIT 15
+    """).df()
+    if rows.empty:
+        return pd.DataFrame(columns=["count"])
+    return rows.set_index("skill_pair")
+
+
+@st.cache_data
+def get_cooccurrence_filtered(
+    _conn: object, company: str, location: str
+) -> pd.DataFrame:
     conditions, params = filter_conditions(company, location)
     conditions.append("category IS NOT NULL")
     where = f"WHERE {' AND '.join(conditions)}"
     skills_series = _conn.execute(
-        f"SELECT skills_norm FROM read_parquet('{PARQUET_S3_PATH}') {where}",
+        f"""
+        SELECT skills_norm FROM read_parquet('{PARQUET_S3_PATH}')
+        {where}
+        LIMIT {_COOCCURRENCE_SAMPLE}
+        """,
         params,
     ).df()["skills_norm"]
 
@@ -73,7 +96,10 @@ def get_cooccurrence(_conn: object, company: str, location: str) -> pd.DataFrame
         if isinstance(xs, list):
             skills = [s.strip() for s in xs if s and s.strip() and s.strip() != "nan"]
         else:
-            skills = [s.strip() for s in str(xs).split(",") if s.strip() and s.strip() != "nan"]
+            skills = [
+                s.strip() for s in str(xs).split(",")
+                if s.strip() and s.strip() != "nan"
+            ]
         uniq = sorted(set(skills))[:40]
         for a, b in combinations(uniq, 2):
             pair_counts[(a, b)] += 1
@@ -101,4 +127,11 @@ st.bar_chart(get_top_cat_skills(conn, company, location, selected_cat))
 st.divider()
 
 st.subheader("Skill Co-occurrence Pairs")
-st.bar_chart(get_cooccurrence(conn, company, location))
+if company == "All" and location == "All":
+    st.caption("Top 15 pairs from precomputed dataset (1.3M postings).")
+    st.bar_chart(get_cooccurrence_precomputed(conn))
+else:
+    st.caption(
+        f"Top 15 pairs sampled from up to {_COOCCURRENCE_SAMPLE:,} filtered postings."
+    )
+    st.bar_chart(get_cooccurrence_filtered(conn, company, location))
