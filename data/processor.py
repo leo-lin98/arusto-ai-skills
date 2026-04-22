@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from itertools import combinations
 
 import numpy as np
 import pandas as pd
@@ -127,12 +129,16 @@ def load_skills(data_dir: str, job_links: set[str]) -> pd.DataFrame:
 
 
 def aggregate_skills(skills_raw: pd.DataFrame) -> pd.DataFrame:
-    # skills stored as comma-separated string for efficient parquet storage + DuckDB querying
+    # filter NaN at row level before groupby so agg can use the fast C-level ",".join
+    clean = skills_raw.dropna(subset=["job_skills"]).copy()
+    clean["job_skills"] = (
+        clean["job_skills"].str.strip().str.lower()
+        .str.replace(r"\s+", " ", regex=True)
+    )
+    clean = clean[(clean["job_skills"].str.len() > 0) & (clean["job_skills"] != "nan")]
     return (
-        skills_raw.groupby("job_link")["job_skills"]
-        .apply(lambda xs: ",".join(
-            _norm_text(x) for x in xs if pd.notna(x) and _norm_text(x)
-        ))
+        clean.groupby("job_link")["job_skills"]
+        .agg(",".join)
         .reset_index()
         .rename(columns={"job_skills": "skills_norm"})
     )
@@ -157,9 +163,13 @@ def load_summary(data_dir: str, job_links: set[str]) -> pd.DataFrame:
 def get_merged(data_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     postings = load_postings(data_dir)
     job_links = set(postings["job_link"])
-    skills_raw = load_skills(data_dir, job_links)
+    # load_skills and load_summary are independent chunked CSV reads — run concurrently
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_skills  = pool.submit(load_skills,  data_dir, job_links)
+        fut_summary = pool.submit(load_summary, data_dir, job_links)
+        skills_raw = fut_skills.result()
+        summary    = fut_summary.result()
     skills_agg = aggregate_skills(skills_raw)
-    summary = load_summary(data_dir, job_links)
     merged = postings.merge(skills_agg, on="job_link", how="left")
     merged = merged.merge(summary, on="job_link", how="left")
     merged["skills_norm"] = merged["skills_norm"].fillna("")
@@ -332,10 +342,7 @@ def build_skill_bundle_pairs(
         skills = sorted(set(parse_skill_list(cell)))
         if len(skills) < 2:
             continue
-        skills = skills[:30]
-        for a in range(len(skills)):
-            for b in range(a + 1, len(skills)):
-                pair_counts[(skills[a], skills[b])] += 1
+        pair_counts.update(combinations(skills[:30], 2))
     return pd.DataFrame(
         [{"skill_a": a, "skill_b": b, "cooccur_count": c}
          for (a, b), c in pair_counts.most_common(top_pairs)]
