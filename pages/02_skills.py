@@ -74,6 +74,7 @@ top_cat_skills = (
         FROM read_parquet('{PARQUET_S3_PATH}')
         {cat_where}
     )
+    WHERE skill IS NOT NULL AND skill != ''
     GROUP BY skill ORDER BY "Count" DESC LIMIT 20
     """,
         cat_params,

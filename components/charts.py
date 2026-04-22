@@ -40,6 +40,7 @@ def skills_frequency_chart(
             FROM read_parquet('{PARQUET_S3_PATH}')
             {where}
         )
+        WHERE skill IS NOT NULL AND skill != ''
         GROUP BY skill ORDER BY "Count" DESC LIMIT {n}
         """,
             params,
