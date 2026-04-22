@@ -68,16 +68,20 @@ Kaggle dataset: `asaniczka/1-3m-linkedin-jobs-and-skills-2024`
 ```
 Kaggle CSVs (raw, ~several GB)
         │
-        ▼
+        ▼ sequential (single network call)
+pipeline.py::download_kaggle_data()
+        │
+        ▼ sequential (model depends on merged data)
 data/processor.py::get_merged()
   ├── load_postings()       nrows=200k, parse timestamps, fill nulls
-  ├── aggregate_skills()    chunked read, filter to sampled job_links, groupby → list
+  ├── aggregate_skills()    chunked read, filter to sampled job_links, groupby → comma-sep string
   └── load_summary()        chunked read, filter to sampled job_links
         │
-        ▼ merged in-memory (no local disk write)
+        ▼ sequential
+train_skill_theme_model()   TF-IDF char-ngram + SGD on top 8k skills
         │
-        ▼
-data/processor.py::build_features()
+        ▼ sequential
+build_features()
   ├── derived columns: job_title_len, n_skills, combined_text, skills_norm
   ├── category: weakly supervised (seed keywords → TF-IDF char-ngram + SGD classifier)
   │     └── seed themes: 9 themes + "Domain / Other" (see SEED_KEYWORDS table)
@@ -87,14 +91,23 @@ data/processor.py::build_features()
   │     └── breadth: 0.50×city_diversity + 0.50×company_diversity
   └── opportunity_label: High Opportunity (≥60) / Emerging (≥40) / Saturated (<40)
         │
-        ▼ serialise to in-memory buffer (io.BytesIO) → stream directly to R2
+        ▼ sequential
+score_topics()              → topic_rankings
+        │
+        ▼ parallel (ThreadPoolExecutor, max_workers=3) — independent, GIL-releasing ops
+  ├── build_label_rollup(topic_rankings)
+  ├── build_skill_theme_map(skills_raw, vec, clf)
+  └── build_skill_bundle_pairs(skills_raw)
+        │
+        ▼ parallel uploads (ThreadPoolExecutor, max_workers=5) — pure I/O, one client per thread
+  ├── merged.parquet
   ├── topic_rankings.parquet
   ├── label_rollup.parquet
   ├── skill_theme_map.parquet
   └── skill_bundles.parquet
         │
         ▼
-Cloudflare R2: arusto-skills/ (all 7 parquets — no local disk write)
+Cloudflare R2: arusto-skills/ (no local disk write)
 ```
 
 ### App (production)
