@@ -29,6 +29,18 @@ def _filter_options(_conn: duckdb.DuckDBPyConnection) -> tuple[list[str], list[s
     return companies, locations
 
 
+@st.cache_data
+def _posting_count(
+    _conn: duckdb.DuckDBPyConnection, company: str, location: str
+) -> int:
+    conditions, params = filter_conditions(company, location)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    row = _conn.execute(
+        f"SELECT COUNT(*) FROM read_parquet('{PARQUET_S3_PATH}') {where}", params
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def sidebar_filters(conn: duckdb.DuckDBPyConnection) -> tuple[str, str]:
     companies, locations = _filter_options(conn)
 
@@ -36,11 +48,7 @@ def sidebar_filters(conn: duckdb.DuckDBPyConnection) -> tuple[str, str]:
     selected_company = st.sidebar.selectbox("Company", ["All"] + companies)
     selected_location = st.sidebar.selectbox("Location", ["All"] + locations)
 
-    conditions, params = filter_conditions(selected_company, selected_location)
-    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-    count = conn.execute(
-        f"SELECT COUNT(*) FROM read_parquet('{PARQUET_S3_PATH}') {where}", params
-    ).fetchone()[0]
+    count = _posting_count(conn, selected_company, selected_location)
     st.sidebar.markdown(f"**{count:,}** postings shown")
 
     return selected_company, selected_location
