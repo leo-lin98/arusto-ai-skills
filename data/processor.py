@@ -339,10 +339,10 @@ def build_skill_bundle_pairs(
     for i, cell in enumerate(skills_raw["job_skills"].tolist()):
         if i >= sample_rows:
             break
-        skills = sorted(set(parse_skill_list(cell)))[:30]
+        skills = sorted(set(parse_skill_list(cell)))
         if len(skills) < 2:
             continue
-        pair_counts.update(combinations(skills, 2))
+        pair_counts.update(combinations(skills[:30], 2))
     return pd.DataFrame(
         [{"skill_a": a, "skill_b": b, "cooccur_count": c}
          for (a, b), c in pair_counts.most_common(top_pairs)]
