@@ -23,15 +23,17 @@ where = f"WHERE {' AND '.join(conditions)}"
 def compute_cooccurrence(skills_series: pd.Series) -> pd.DataFrame:
     pair_counts: Counter = Counter()
     for xs in skills_series:
-        uniq = sorted(set(x for x in xs if x))[:40]
+        skills = [s.strip() for s in str(xs).split(",") if s.strip()]
+        uniq = sorted(set(skills))[:40]
         for a, b in combinations(uniq, 2):
             pair_counts[(a, b)] += 1
-    return pd.DataFrame(
-        [
-            {"skill_pair": f"{a} + {b}", "count": c}
-            for (a, b), c in pair_counts.most_common(15)
-        ]
-    ).set_index("skill_pair")
+    rows = [
+        {"skill_pair": f"{a} + {b}", "count": c}
+        for (a, b), c in pair_counts.most_common(15)
+    ]
+    if not rows:
+        return pd.DataFrame(columns=["count"])
+    return pd.DataFrame(rows).set_index("skill_pair")
 
 
 st.subheader("Top Skills by Frequency")
@@ -65,7 +67,7 @@ top_cat_skills = (
         f"""
     SELECT skill, COUNT(*) AS "Count"
     FROM (
-        SELECT UNNEST(skills_norm) AS skill
+        SELECT TRIM(UNNEST(string_split(skills_norm, ','))) AS skill
         FROM read_parquet('{PARQUET_S3_PATH}')
         {cat_where}
     )
