@@ -7,9 +7,10 @@ _R2_ENDPOINT_HOST = "a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com"
 _R2_BUCKET = "arusto-skills"
 PARQUET_S3_PATH = f"s3://{_R2_BUCKET}/merged.parquet"
 
+_SESSION_KEY = "duckdb_conn"
 
-@st.cache_resource
-def get_db_connection() -> duckdb.DuckDBPyConnection:
+
+def _create_connection() -> duckdb.DuckDBPyConnection:
     key_id, secret = _get_r2_credentials()
     conn = duckdb.connect()
     conn.execute("INSTALL httpfs; LOAD httpfs;")
@@ -24,6 +25,12 @@ def get_db_connection() -> duckdb.DuckDBPyConnection:
         """
     )
     return conn
+
+
+def get_db_connection() -> duckdb.DuckDBPyConnection:
+    if _SESSION_KEY not in st.session_state:
+        st.session_state[_SESSION_KEY] = _create_connection()
+    return st.session_state[_SESSION_KEY]
 
 
 def filter_conditions(company: str, location: str) -> tuple[list[str], list[str]]:
