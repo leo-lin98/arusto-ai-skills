@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -205,18 +206,30 @@ with tabs[0]:
 
     with col_l:
         st.subheader(f"Top {top_n} most mentioned skills")
-        st.bar_chart(
-            get_top_skills(top_n).set_index("skill")["skill_count"].astype(float),
-            height=400,
+        skills_df = get_top_skills(top_n)
+        st.altair_chart(
+            alt.Chart(skills_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("skill:N", sort=None, title="Skill"),
+                y=alt.Y("skill_count:Q", title="Count"),
+            )
+            .properties(height=400),
+            use_container_width=True,
         )
 
     with col_r:
         st.subheader(f"Top {top_n} course topics by opportunity score")
-        st.bar_chart(
-            get_top_topics_chart(top_n)
-            .set_index("course_topic")["course_opportunity_score"]
-            .astype(float),
-            height=400,
+        topics_df = get_top_topics_chart(top_n)
+        st.altair_chart(
+            alt.Chart(topics_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("course_topic:N", sort=None, title="Course Topic"),
+                y=alt.Y("course_opportunity_score:Q", title="Opportunity Score"),
+            )
+            .properties(height=400),
+            use_container_width=True,
         )
 
     st.divider()

@@ -1,3 +1,4 @@
+import altair as alt
 import duckdb
 import streamlit as st
 
@@ -31,9 +32,8 @@ def skills_frequency_chart(
     conditions, params = filter_conditions(company, location)
     conditions.append("category IS NOT NULL")
     where = f"WHERE {' AND '.join(conditions)}"
-    df = (
-        conn.execute(
-            f"""
+    df = conn.execute(
+        f"""
         SELECT skill, COUNT(*) AS "Count"
         FROM (
             SELECT TRIM(UNNEST(string_split(skills_norm, ','))) AS skill
@@ -43,9 +43,14 @@ def skills_frequency_chart(
         WHERE skill IS NOT NULL AND TRIM(skill) != '' AND LOWER(TRIM(skill)) != 'nan'
         GROUP BY skill ORDER BY "Count" DESC LIMIT {n}
         """,
-            params,
+        params,
+    ).df()
+    chart = (
+        alt.Chart(df)
+        .mark_bar()
+        .encode(
+            x=alt.X("skill:N", sort=None, title="Skill"),
+            y=alt.Y("Count:Q", title="Count"),
         )
-        .df()
-        .set_index("skill")
     )
-    st.bar_chart(df)
+    st.altair_chart(chart, use_container_width=True)
