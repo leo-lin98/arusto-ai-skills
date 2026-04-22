@@ -19,7 +19,7 @@ metrics = conn.execute(
     SELECT
         COUNT(*) AS total,
         COUNT(DISTINCT company) AS companies,
-        COUNT(DISTINCT job_location) AS locations
+        COUNT(DISTINCT search_city) AS locations
     FROM read_parquet('{PARQUET_S3_PATH}')
     {where}
     """,
@@ -99,15 +99,15 @@ st.subheader("Top 10 Job Locations")
 location_df = (
     conn.execute(
         f"""
-    SELECT job_location, COUNT(*) AS "Postings"
+    SELECT search_city, COUNT(*) AS "Postings"
     FROM read_parquet('{PARQUET_S3_PATH}')
     {where}
-    GROUP BY job_location ORDER BY "Postings" DESC LIMIT 10
+    GROUP BY search_city ORDER BY "Postings" DESC LIMIT 10
     """,
         params,
     )
     .df()
-    .set_index("job_location")
+    .set_index("search_city")
 )
 st.bar_chart(location_df)
 

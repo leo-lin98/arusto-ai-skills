@@ -33,6 +33,6 @@ def filter_conditions(company: str, location: str) -> tuple[list[str], list[str]
         conditions.append("company = ?")
         params.append(company)
     if location != "All":
-        conditions.append("job_location = ?")
+        conditions.append("search_city = ?")
         params.append(location)
     return conditions, params

@@ -19,11 +19,11 @@ def _filter_options(_conn: duckdb.DuckDBPyConnection) -> tuple[list[str], list[s
     locations = (
         _conn.execute(
             f"""
-            SELECT job_location FROM read_parquet('{PARQUET_S3_PATH}')
-            GROUP BY job_location ORDER BY COUNT(*) DESC LIMIT 50
+            SELECT search_city FROM read_parquet('{PARQUET_S3_PATH}')
+            GROUP BY search_city ORDER BY COUNT(*) DESC LIMIT 50
             """
         )
-        .df()["job_location"]
+        .df()["search_city"]
         .tolist()
     )
     return companies, locations
