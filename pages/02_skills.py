@@ -124,9 +124,14 @@ def _build_pivot(bundles: pd.DataFrame, top_n: int) -> pd.DataFrame:
     ]
     if filtered.empty:
         return pd.DataFrame()
-    return filtered.pivot_table(
+    pivot = filtered.pivot_table(
         index="skill_a", columns="skill_b", values="cooccur_count", fill_value=0
     )
+    # symmetrize so both triangles are filled (skill_a < skill_b ordering from Counter)
+    pivot = pivot.add(pivot.T, fill_value=0)
+    pivot.columns.name = None
+    pivot.index.name = None
+    return pivot
 
 
 st.subheader("Top Skills by Frequency")
