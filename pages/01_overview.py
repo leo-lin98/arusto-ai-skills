@@ -13,6 +13,7 @@ company, location = sidebar_filters(conn)
 
 conditions, params = filter_conditions(company, location)
 where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+time_where = f"WHERE {' AND '.join(conditions + ['first_seen IS NOT NULL'])}"
 
 metrics = conn.execute(
     f"""
@@ -62,9 +63,9 @@ day_order = [
 day_df = (
     conn.execute(
         f"""
-    SELECT day_of_week, COUNT(*) AS "Postings"
+    SELECT dayname(first_seen) AS day_of_week, COUNT(*) AS "Postings"
     FROM read_parquet('{PARQUET_S3_PATH}')
-    {where}
+    {time_where}
     GROUP BY day_of_week
     """,
         params,
@@ -115,9 +116,9 @@ st.subheader("Job Postings by Hour of Day")
 hourly_df = (
     conn.execute(
         f"""
-    SELECT hour, COUNT(*) AS "Postings"
+    SELECT hour(first_seen) AS hour, COUNT(*) AS "Postings"
     FROM read_parquet('{PARQUET_S3_PATH}')
-    {where}
+    {time_where}
     GROUP BY hour ORDER BY hour
     """,
         params,
@@ -131,8 +132,8 @@ st.subheader("Job Openings by Day of Month")
 days = (
     conn.execute(
         f"""
-    SELECT day FROM read_parquet('{PARQUET_S3_PATH}')
-    {where}
+    SELECT dayofmonth(first_seen) AS day FROM read_parquet('{PARQUET_S3_PATH}')
+    {time_where}
     LIMIT 10000
     """,
         params,
