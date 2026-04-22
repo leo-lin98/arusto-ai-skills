@@ -266,7 +266,10 @@ def score_topics(df: pd.DataFrame) -> pd.DataFrame:
         ]
         c1 = w1.groupby("search_position")["job_link"].count()
         c0 = w0.groupby("search_position")["job_link"].count()
-        pos["trend_30d"] = pos["search_position"].map((c1 - c0).fillna(0)).fillna(0).astype(float)
+        # pct change relative to prior window; fillna(0) before ops so sparse Series
+        # don't produce NaN for topics present in only one window; +1 avoids div-by-zero
+        pct_change = (c1.fillna(0) - c0.fillna(0)) / (c0.fillna(0) + 1)
+        pos["trend_30d"] = pos["search_position"].map(pct_change).fillna(0.0).astype(float)
     else:
         pos["trend_30d"] = 0.0
 

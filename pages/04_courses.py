@@ -265,7 +265,12 @@ with tabs[0]:
 
     st.divider()
     st.subheader(f"30-day trend — top {top_n} fastest growing topics")
-    st.bar_chart(get_trend_top(top_n).set_index("course_topic")["trend_30d"], height=300)
+    st.caption("Growth rate vs prior 30-day window. Requires ≥60 days of posting history in dataset.")
+    trend_df = get_trend_top(top_n)
+    if trend_df.empty or trend_df["trend_30d"].eq(0).all():
+        st.info("No trend signal — dataset lacks sufficient temporal spread for a 30-day comparison.")
+    else:
+        st.bar_chart(trend_df.set_index("course_topic")["trend_30d"], height=300)
 
     st.divider()
     st.subheader("Job explorer")
