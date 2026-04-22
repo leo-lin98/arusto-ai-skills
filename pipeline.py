@@ -5,6 +5,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 
+import pandas as pd
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,7 +30,7 @@ def timed(label: str):
     print(f"  ✓ {label} ({time.perf_counter() - t0:.1f}s)")
 
 
-def _upload(args: tuple) -> str:
+def _upload(args: tuple[pd.DataFrame, str]) -> str:
     df, name = args
     s3 = _get_s3_client()
     upload_parquet_if_missing(df, name, s3)
