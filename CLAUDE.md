@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Environment
 
-Conda env: `arusto-skills` (Python 3.12, managed by miniforge at `/opt/homebrew/Caskroom/miniforge/base`).
+Conda env: `arusto-skills` (Python 3.12).
 
 ```bash
 conda activate arusto-skills
