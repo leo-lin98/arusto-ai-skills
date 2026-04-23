@@ -234,7 +234,6 @@ with tabs[0]:
 
     st.divider()
     st.subheader("Volume vs salary proxy (top 100 topics)")
-    st.caption("Bubble size not supported in st.scatter_chart — point = 1 topic")
     st.scatter_chart(
         get_volume_vs_salary(),
         x="volume",
@@ -265,7 +264,7 @@ with tabs[0]:
     )
     st.dataframe(
         get_job_explorer(search=search_text, label=label_filter),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
 
@@ -273,11 +272,11 @@ with tabs[0]:
     st.subheader("Ranked course topics")
     st.dataframe(
         get_topic_rankings(label=label_sel, top_n=top_n),
-        width="stretch",
+        use_container_width=True,
         hide_index=True,
     )
     st.subheader("Label rollup")
-    st.dataframe(get_label_rollup(), width="stretch", hide_index=True)
+    st.dataframe(get_label_rollup(), use_container_width=True, hide_index=True)
 
 with tabs[1]:
     st.subheader("Skill theme breakdown — total mentions per theme")
@@ -295,20 +294,20 @@ with tabs[1]:
     )
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.dataframe(get_skill_themes(min_conf), width="stretch", hide_index=True)
+        st.dataframe(get_skill_themes(min_conf), use_container_width=True, hide_index=True)
     with col2:
-        st.dataframe(theme_counts, width="stretch", hide_index=True)
+        st.dataframe(theme_counts, use_container_width=True, hide_index=True)
 
 with tabs[2]:
     st.subheader("Skill co-occurrence heatmap (top 15 skills)")
     st.dataframe(
         get_cooccurrence_pivot(15).style.background_gradient(cmap="Blues"),
-        width="stretch",
+        use_container_width=True,
     )
 
     st.divider()
     st.subheader("Skill bundling evidence (co-occurrence pairs)")
-    st.dataframe(get_skill_bundles(), width="stretch", hide_index=True)
+    st.dataframe(get_skill_bundles(), use_container_width=True, hide_index=True)
     st.caption(
         "Skills like communication, problem solving, and adaptability co-occur as bundles — "
         "supporting bundled course design."
