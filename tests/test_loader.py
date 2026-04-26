@@ -84,14 +84,24 @@ class TestUploadParquetWithMd5Dedup:
 
         s3.upload_fileobj.assert_called_once()
 
-    def test_reraises_non_404_client_error(self):
+    def test_uploads_on_403(self):
+        """R2 returns 403 for non-existent objects in private buckets."""
         df = _make_df()
         s3 = MagicMock()
         s3.head_object.side_effect = _client_error("403")
 
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+
+        s3.upload_fileobj.assert_called_once()
+
+    def test_reraises_other_client_errors(self):
+        df = _make_df()
+        s3 = MagicMock()
+        s3.head_object.side_effect = _client_error("500")
+
         with pytest.raises(ClientError):
             upload_parquet_with_md5_dedup(df, "test.parquet", s3)
-        s3.put_object.assert_not_called()
+        s3.upload_fileobj.assert_not_called()
 
     def test_exactly_one_head_object_call_per_upload(self):
         df = _make_df()

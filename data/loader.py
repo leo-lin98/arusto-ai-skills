@@ -60,7 +60,7 @@ def upload_parquet_with_md5_dedup(df: pd.DataFrame, key: str, s3: boto3.client) 
             print(f"Skipping {key} (md5 match)")
             return
     except ClientError as e:
-        if e.response["Error"]["Code"] != "404":
+        if e.response["Error"]["Code"] not in ("403", "404"):
             raise
 
     buf.seek(0)
