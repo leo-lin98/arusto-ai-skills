@@ -1,11 +1,13 @@
 """
 Acceptance criteria:
 - 404 from head_object → upload with md5 stored in Metadata.
+- 403 from head_object → upload (R2 private bucket returns 403 for missing objects).
 - Matching md5 → no upload (zero R2 write ops).
 - Mismatching md5 → upload with updated metadata.
-- Non-404 ClientError → re-raised (do not swallow permission errors).
+- Non-404/403 ClientError → re-raised (do not swallow permission errors).
 - Missing md5 key in existing object metadata → treated as mismatch, uploads.
 - Stored md5 matches actual parquet bytes (not a stub).
+- extra_metadata fields merged into uploaded object Metadata.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ class TestUploadParquetWithMd5Dedup:
         s3 = MagicMock()
         s3.head_object.side_effect = _client_error("404")
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         s3.upload_fileobj.assert_called_once()
 
@@ -50,7 +52,7 @@ class TestUploadParquetWithMd5Dedup:
         s3 = MagicMock()
         s3.head_object.side_effect = _client_error("404")
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         extra_args = s3.upload_fileobj.call_args[1]["ExtraArgs"]
         assert extra_args["Metadata"]["md5"] == _md5_of_df(df)
@@ -60,7 +62,7 @@ class TestUploadParquetWithMd5Dedup:
         s3 = MagicMock()
         s3.head_object.return_value = {"Metadata": {"md5": _md5_of_df(df)}}
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         s3.upload_fileobj.assert_not_called()
 
@@ -69,7 +71,7 @@ class TestUploadParquetWithMd5Dedup:
         s3 = MagicMock()
         s3.head_object.return_value = {"Metadata": {"md5": "stale_hash_abc"}}
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         s3.upload_fileobj.assert_called_once()
         extra_args = s3.upload_fileobj.call_args[1]["ExtraArgs"]
@@ -80,7 +82,7 @@ class TestUploadParquetWithMd5Dedup:
         s3 = MagicMock()
         s3.head_object.return_value = {"Metadata": {}}
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         s3.upload_fileobj.assert_called_once()
 
@@ -90,7 +92,7 @@ class TestUploadParquetWithMd5Dedup:
         s3 = MagicMock()
         s3.head_object.side_effect = _client_error("403")
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         s3.upload_fileobj.assert_called_once()
 
@@ -100,14 +102,25 @@ class TestUploadParquetWithMd5Dedup:
         s3.head_object.side_effect = _client_error("500")
 
         with pytest.raises(ClientError):
-            upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+            upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
         s3.upload_fileobj.assert_not_called()
+
+    def test_extra_metadata_stored_alongside_md5(self):
+        df = _make_df()
+        s3 = MagicMock()
+        s3.head_object.side_effect = _client_error("404")
+
+        upload_parquet_with_md5_dedup(df, "jobs.parquet", s3, {"config_hash": "abc123"})
+
+        extra_args = s3.upload_fileobj.call_args[1]["ExtraArgs"]
+        assert extra_args["Metadata"]["config_hash"] == "abc123"
+        assert "md5" in extra_args["Metadata"]
 
     def test_exactly_one_head_object_call_per_upload(self):
         df = _make_df()
         s3 = MagicMock()
         s3.head_object.side_effect = _client_error("404")
 
-        upload_parquet_with_md5_dedup(df, "test.parquet", s3)
+        upload_parquet_with_md5_dedup(df, "test.parquet", s3, {})
 
         assert s3.head_object.call_count == 1

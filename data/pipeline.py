@@ -6,9 +6,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 
 import pandas as pd
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 from data.loader import (
+    R2_BUCKET,
     _get_s3_client,
     download_kaggle_data,
     upload_parquet_with_md5_dedup,
@@ -17,6 +19,7 @@ from data.processor import (
     build_features,
     build_skill_theme_map,
     get_merged,
+    pipeline_config_hash,
     score_topics,
     train_skill_theme_model,
 )
@@ -29,16 +32,30 @@ def timed(label: str):
     print(f"  ✓ {label} ({time.perf_counter() - t0:.1f}s)")
 
 
-def _upload(args: tuple[pd.DataFrame, str]) -> str:
-    df, key = args
+def _upload(args: tuple[pd.DataFrame, str, dict[str, str]]) -> str:
+    df, key, extra_meta = args
     s3 = _get_s3_client()
-    upload_parquet_with_md5_dedup(df, key, s3)
+    upload_parquet_with_md5_dedup(df, key, s3, extra_meta)
     return key
+
+
+def _config_current(s3: object, config_hash: str) -> bool:
+    try:
+        head = s3.head_object(Bucket=R2_BUCKET, Key="jobs.parquet")
+        return head.get("Metadata", {}).get("config_hash") == config_hash
+    except ClientError:
+        return False
 
 
 def main() -> None:
     load_dotenv()
     t_start = time.perf_counter()
+
+    config_hash = pipeline_config_hash()
+    s3_check = _get_s3_client()
+    if _config_current(s3_check, config_hash):
+        print("Pipeline config unchanged — parquets are current, skipping.")
+        return
 
     with tempfile.TemporaryDirectory() as tmpdir:
 
@@ -64,9 +81,9 @@ def main() -> None:
         print(f"     {len(topic_rankings):,} qualifying topics")
 
         uploads = [
-            (featured,        "jobs.parquet"),
-            (topic_rankings,  "topic_rankings.parquet"),
-            (skill_theme_map, "skill_theme_map.parquet"),
+            (featured,        "jobs.parquet",           {"config_hash": config_hash}),
+            (topic_rankings,  "topic_rankings.parquet",  {}),
+            (skill_theme_map, "skill_theme_map.parquet", {}),
         ]
 
         with timed("Upload to R2 (parallel, md5 dedup)"):

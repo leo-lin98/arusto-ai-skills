@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
@@ -59,6 +61,20 @@ SEED_KEYWORDS: dict[str, list[str]] = {
 }
 
 THEMES: list[str] = list(SEED_KEYWORDS.keys()) + ["Domain / Other"]
+
+
+def pipeline_config_hash() -> str:
+    config = {
+        "W_VOLUME": W_VOLUME, "W_SALARY": W_SALARY, "W_BREADTH": W_BREADTH,
+        "W_REMOTE": W_REMOTE, "W_HYBRID": W_HYBRID, "W_SENIOR": W_SENIOR,
+        "W_CITY": W_CITY, "W_COMPANY": W_COMPANY,
+        "LABEL_HIGH": LABEL_HIGH, "LABEL_MID": LABEL_MID,
+        "MIN_VOLUME": MIN_VOLUME,
+        "R2_THRESHOLD": R2_THRESHOLD, "SLOPE_THRESHOLD": SLOPE_THRESHOLD,
+        "MIN_TREND_WEEKS": MIN_TREND_WEEKS,
+        "SEED_KEYWORDS": SEED_KEYWORDS,
+    }
+    return hashlib.md5(json.dumps(config, sort_keys=True).encode()).hexdigest()
 
 
 def _norm_text(x: str) -> str:
