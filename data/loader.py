@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 
@@ -9,7 +10,6 @@ from botocore.exceptions import ClientError
 
 R2_ENDPOINT = "https://a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com"
 R2_BUCKET = "arusto-skills"
-R2_KEY = "merged.parquet"
 
 
 def _get_r2_credentials() -> tuple[str, str]:
@@ -37,19 +37,6 @@ def _get_r2_credentials() -> tuple[str, str]:
     )
 
 
-def load_parquet_from_r2() -> pd.DataFrame:
-    key_id, secret = _get_r2_credentials()
-    storage_options = {
-        "key": key_id,
-        "secret": secret,
-        "client_kwargs": {"endpoint_url": R2_ENDPOINT},
-    }
-    return pd.read_parquet(
-        f"s3://{R2_BUCKET}/{R2_KEY}",
-        storage_options=storage_options,
-    )
-
-
 def _get_s3_client() -> boto3.client:
     key_id, secret = _get_r2_credentials()
     return boto3.client(
@@ -61,30 +48,28 @@ def _get_s3_client() -> boto3.client:
     )
 
 
-def upload_parquet_to_r2(df: pd.DataFrame, key: str, s3: boto3.client | None = None) -> None:
-    client = s3 or _get_s3_client()
+def upload_parquet_with_md5_dedup(df: pd.DataFrame, key: str, s3: boto3.client) -> None:
     buf = io.BytesIO()
     df.to_parquet(buf, index=False, engine="pyarrow")
-    buf.seek(0)
-    client.upload_fileobj(buf, R2_BUCKET, key)
-    print(f"Uploaded {key} ({len(df):,} rows)")
+    md5_hex = hashlib.md5(buf.getvalue()).hexdigest()
 
-
-def exists_in_r2(key: str, s3: boto3.client) -> bool:
     try:
-        s3.head_object(Bucket=R2_BUCKET, Key=key)
-        return True
+        head = s3.head_object(Bucket=R2_BUCKET, Key=key)
+        if head.get("Metadata", {}).get("md5") == md5_hex:
+            print(f"Skipping {key} (md5 match)")
+            return
     except ClientError as e:
-        if e.response["Error"]["Code"] == "404":
-            return False
-        raise
+        if e.response["Error"]["Code"] != "404":
+            raise
 
-
-def upload_parquet_if_missing(df: pd.DataFrame, key: str, s3: boto3.client) -> None:
-    if exists_in_r2(key, s3):
-        print(f"Skipping {key} (already exists in R2)")
-        return
-    upload_parquet_to_r2(df, key, s3)
+    buf.seek(0)
+    s3.put_object(
+        Bucket=R2_BUCKET,
+        Key=key,
+        Body=buf.getvalue(),
+        Metadata={"md5": md5_hex},
+    )
+    print(f"Uploaded {key} ({len(df):,} rows)")
 
 
 def download_kaggle_data(dest_dir: str) -> None:

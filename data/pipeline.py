@@ -6,16 +6,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 
 import pandas as pd
-
 from dotenv import load_dotenv
 
-load_dotenv()
-
-from data.loader import _get_s3_client, download_kaggle_data, upload_parquet_if_missing
+from data.loader import (
+    _get_s3_client,
+    download_kaggle_data,
+    upload_parquet_with_md5_dedup,
+)
 from data.processor import (
     build_features,
-    build_label_rollup,
-    build_skill_bundle_pairs,
     build_skill_theme_map,
     get_merged,
     score_topics,
@@ -31,13 +30,14 @@ def timed(label: str):
 
 
 def _upload(args: tuple[pd.DataFrame, str]) -> str:
-    df, name = args
+    df, key = args
     s3 = _get_s3_client()
-    upload_parquet_if_missing(df, name, s3)
-    return name
+    upload_parquet_with_md5_dedup(df, key, s3)
+    return key
 
 
 def main() -> None:
+    load_dotenv()
     t_start = time.perf_counter()
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -52,39 +52,31 @@ def main() -> None:
         with timed("Train skill theme model"):
             vec, clf = train_skill_theme_model(skills_raw)
 
-        # skill tables only need skills_raw + vec/clf — start them immediately so they
-        # overlap with the build_features → score_topics → label_rollup chain
         with timed("Build features + derived tables (parallel)"):
             with ThreadPoolExecutor(max_workers=2) as pool:
-                fut_themes  = pool.submit(build_skill_theme_map, skills_raw, vec, clf)
-                fut_bundles = pool.submit(build_skill_bundle_pairs, skills_raw)
+                fut_themes = pool.submit(build_skill_theme_map, skills_raw, vec, clf)
 
-                featured       = build_features(merged, vec, clf)
+                featured = build_features(merged, vec, clf)
                 topic_rankings = score_topics(featured)
-                label_rollup   = build_label_rollup(topic_rankings)
 
                 skill_theme_map = fut_themes.result()
-                skill_bundles   = fut_bundles.result()
 
         print(f"     {len(topic_rankings):,} qualifying topics")
 
-        # uploads are pure I/O — one s3 client per thread (boto3 not thread-safe)
         uploads = [
-            (featured,        "merged.parquet"),
+            (featured,        "jobs.parquet"),
             (topic_rankings,  "topic_rankings.parquet"),
-            (label_rollup,    "label_rollup.parquet"),
             (skill_theme_map, "skill_theme_map.parquet"),
-            (skill_bundles,   "skill_bundles.parquet"),
         ]
 
-        with timed("Upload to R2 (parallel)"):
-            with ThreadPoolExecutor(max_workers=5) as pool:
+        with timed("Upload to R2 (parallel, md5 dedup)"):
+            with ThreadPoolExecutor(max_workers=3) as pool:
                 futures = {pool.submit(_upload, args): args[1] for args in uploads}
                 for fut in as_completed(futures):
                     exc = fut.exception()
                     if exc:
                         raise RuntimeError(f"Upload failed for {futures[fut]}") from exc
-                    print(f"     uploaded {fut.result()}")
+                    print(f"     {fut.result()}")
 
     print(f"\nDone. Total wall time: {time.perf_counter() - t_start:.1f}s")
 

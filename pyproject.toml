@@ -1,5 +1,5 @@
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 exclude = ["*.ipynb"]
 
@@ -8,5 +8,6 @@ select = ["E", "F", "W", "I", "N", "UP"]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"models/train.py" = ["N806"]
-"pages/03_model.py" = ["N806"]
+"data/processor.py" = ["N806", "E501"]
+"pages/01_overview.py" = ["E501"]
+"streamlit_app.py" = ["E501"]

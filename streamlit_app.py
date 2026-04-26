@@ -7,11 +7,11 @@ st.set_page_config(
 
 st.title("Skills in Demand Dashboard")
 st.markdown("""
-Analyze 1.3M LinkedIn job postings to surface which skills are in demand.
+Analyze 1.3M LinkedIn job postings to surface labor-market signal for curriculum decisions.
 
 Use the sidebar to navigate between pages:
 
 - **01 Overview** — job titles, companies, locations, temporal trends
-- **02 Skills** — top skills by frequency and category
-- **03 Model** — job category predictor
+- **02 Skills** — top skills by frequency, category breakdown, co-occurrence heatmaps
+- **03 Opportunities** — course opportunity rankings with growth forecasts
 """)

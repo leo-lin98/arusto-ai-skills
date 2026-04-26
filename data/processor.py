@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
-from itertools import combinations
 
 import numpy as np
 import pandas as pd
@@ -15,6 +14,10 @@ W_REMOTE, W_HYBRID, W_SENIOR = 0.40, 0.25, 0.35
 W_CITY, W_COMPANY = 0.50, 0.50
 LABEL_HIGH, LABEL_MID = 60.0, 40.0
 MIN_VOLUME = 2_000
+# TODO: workshop R2_THRESHOLD and SLOPE_THRESHOLD against real data percentiles
+R2_THRESHOLD: float = 0.30
+SLOPE_THRESHOLD: float = 1.0
+MIN_TREND_WEEKS: int = 4
 
 SEED_KEYWORDS: dict[str, list[str]] = {
     "Communication & Collaboration": [
@@ -91,6 +94,114 @@ def opportunity_label(score: float) -> str:
     if score >= LABEL_MID:
         return "Emerging"
     return "Saturated"
+
+
+def _linear_trend_for_position(
+    dates: pd.Series,
+    forecast_weeks: int,
+    min_weeks: int,
+    r2_threshold: float,
+    slope_threshold: float,
+) -> dict[str, object]:
+    null_result: dict[str, object] = {
+        "slope": 0.0,
+        "r2": 0.0,
+        "forecast": np.nan,
+        "trend_label": "Insufficient data",
+    }
+    dates = dates.dropna()
+    if len(dates) < min_weeks * 3:
+        return null_result
+
+    week_series = dates.dt.to_period("W").value_counts().sort_index()
+    if len(week_series) < min_weeks:
+        return null_result
+
+    x = np.arange(len(week_series), dtype=float)
+    y = week_series.values.astype(float)
+    x_mean, y_mean = x.mean(), y.mean()
+    ss_xx = ((x - x_mean) ** 2).sum()
+    if ss_xx == 0:
+        return null_result
+
+    slope = ((x - x_mean) * (y - y_mean)).sum() / ss_xx
+    intercept = y_mean - slope * x_mean
+    y_pred = slope * x + intercept
+    ss_res = ((y - y_pred) ** 2).sum()
+    ss_tot = ((y - y_mean) ** 2).sum()
+    r2 = float(np.clip(1 - ss_res / ss_tot if ss_tot > 0 else 0.0, 0.0, 1.0))
+
+    last_x = x[-1]
+    forecast = sum(
+        max(0.0, slope * (last_x + k) + intercept)
+        for k in range(1, forecast_weeks + 1)
+    )
+
+    if slope > slope_threshold and r2 >= r2_threshold:
+        label = "Growing"
+    elif slope < -slope_threshold and r2 >= r2_threshold:
+        label = "Declining"
+    else:
+        label = "Stable"
+
+    return {
+        "slope": round(float(slope), 3),
+        "r2": round(r2, 3),
+        "forecast": round(forecast, 1),
+        "trend_label": label,
+    }
+
+
+def add_trend_forecast(
+    pos: pd.DataFrame,
+    postings: pd.DataFrame,
+    forecast_weeks: int,
+    r2_threshold: float,
+    slope_threshold: float,
+) -> pd.DataFrame:
+    forecast_col = f"forecast_{forecast_weeks}w"
+
+    if not postings["first_seen"].notna().any():
+        pos["trend_slope"] = 0.0
+        pos["trend_r2"] = 0.0
+        pos[forecast_col] = np.nan
+        pos["trend_label"] = "Insufficient data"
+        return pos
+
+    qualifying = set(pos["search_position"].tolist())
+    subset = postings[
+        postings["search_position"].isin(qualifying) & postings["first_seen"].notna()
+    ][["search_position", "first_seen"]]
+
+    records = []
+    for position, grp in subset.groupby("search_position"):
+        result = _linear_trend_for_position(
+            grp["first_seen"],
+            forecast_weeks=forecast_weeks,
+            min_weeks=MIN_TREND_WEEKS,
+            r2_threshold=r2_threshold,
+            slope_threshold=slope_threshold,
+        )
+        result["search_position"] = position
+        records.append(result)
+
+    if not records:
+        pos["trend_slope"] = 0.0
+        pos["trend_r2"] = 0.0
+        pos[forecast_col] = np.nan
+        pos["trend_label"] = "Insufficient data"
+        return pos
+
+    trend_df = pd.DataFrame(records).rename(columns={
+        "slope": "trend_slope",
+        "r2": "trend_r2",
+        "forecast": forecast_col,
+    })
+    pos = pos.merge(trend_df, on="search_position", how="left")
+    pos["trend_slope"] = pos["trend_slope"].fillna(0.0)
+    pos["trend_r2"] = pos["trend_r2"].fillna(0.0)
+    pos["trend_label"] = pos["trend_label"].fillna("Insufficient data")
+    return pos
 
 
 def load_postings(data_dir: str) -> pd.DataFrame:
@@ -253,7 +364,8 @@ def score_topics(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # min-max scale each metric to [0, 100] before applying weights
-    pos["volume_score"] = minmax_norm(pos["volume"])
+    pos["log_volume"] = np.log1p(pos["volume"])
+    pos["volume_score"] = minmax_norm(pos["log_volume"])
     pos["salary_score"] = minmax_norm(pos["salary_proxy"])
     pos["breadth_score"] = (
         W_CITY * minmax_norm(pos["city_count"])
@@ -267,39 +379,62 @@ def score_topics(df: pd.DataFrame) -> pd.DataFrame:
     ).round(1)
     pos["opportunity_label"] = pos["course_opportunity_score"].apply(opportunity_label)
 
-    if df["first_seen"].notna().any():
-        max_dt = df["first_seen"].max()
-        w1 = df[df["first_seen"] >= max_dt - pd.Timedelta(days=30)]
-        w0 = df[
-            (df["first_seen"] < max_dt - pd.Timedelta(days=30))
-            & (df["first_seen"] >= max_dt - pd.Timedelta(days=60))
-        ]
-        c1 = w1.groupby("search_position")["job_link"].count()
-        c0 = w0.groupby("search_position")["job_link"].count()
-        # pct change relative to prior window; fillna(0) before ops so sparse Series
-        # don't produce NaN for topics present in only one window; +1 avoids div-by-zero
-        pct_change = (c1.fillna(0) - c0.fillna(0)) / (c0.fillna(0) + 1)
-        pos["trend_30d"] = pos["search_position"].map(pct_change).fillna(0.0).astype(float)
+    if not df["first_seen"].notna().any():
+        pos = pos.assign(
+            trend_slope=0.0,
+            trend_r2=0.0,
+            forecast_4w=np.nan,
+            forecast_12w=np.nan,
+            trend_label="Insufficient data",
+        )
     else:
-        pos["trend_30d"] = 0.0
+        qualifying = set(pos["search_position"].tolist())
+        subset = df[
+            df["search_position"].isin(qualifying) & df["first_seen"].notna()
+        ][["search_position", "first_seen"]]
+        records = []
+        for position, grp in subset.groupby("search_position"):
+            r4 = _linear_trend_for_position(
+                grp["first_seen"],
+                forecast_weeks=4,
+                min_weeks=MIN_TREND_WEEKS,
+                r2_threshold=R2_THRESHOLD,
+                slope_threshold=SLOPE_THRESHOLD,
+            )
+            r12 = _linear_trend_for_position(
+                grp["first_seen"],
+                forecast_weeks=12,
+                min_weeks=MIN_TREND_WEEKS,
+                r2_threshold=R2_THRESHOLD,
+                slope_threshold=SLOPE_THRESHOLD,
+            )
+            records.append({
+                "search_position": position,
+                "trend_slope": r12["slope"],
+                "trend_r2": r12["r2"],
+                "forecast_4w": r4["forecast"],
+                "forecast_12w": r12["forecast"],
+                "trend_label": r12["trend_label"],
+            })
+        if records:
+            trend_df = pd.DataFrame(records)
+            pos = pos.merge(trend_df, on="search_position", how="left")
+            pos["trend_slope"] = pos["trend_slope"].fillna(0.0)
+            pos["trend_r2"] = pos["trend_r2"].fillna(0.0)
+            pos["trend_label"] = pos["trend_label"].fillna("Insufficient data")
+        else:
+            pos = pos.assign(
+                trend_slope=0.0,
+                trend_r2=0.0,
+                forecast_4w=np.nan,
+                forecast_12w=np.nan,
+                trend_label="Insufficient data",
+            )
 
     ranked = pos.sort_values("course_opportunity_score", ascending=False).reset_index(drop=True)
     ranked.index += 1
     ranked.insert(0, "rank", ranked.index)
     return ranked.rename(columns={"search_position": "course_topic"})
-
-
-def build_label_rollup(topic_rankings: pd.DataFrame) -> pd.DataFrame:
-    return (
-        topic_rankings.groupby("opportunity_label", as_index=False)
-        .agg(
-            n_topics=("course_topic", "count"),
-            avg_score=("course_opportunity_score", "mean"),
-            total_postings=("volume", "sum"),
-        )
-        .sort_values("avg_score", ascending=False)
-        .round(1)
-    )
 
 
 def build_skill_theme_map(
@@ -328,22 +463,3 @@ def build_skill_theme_map(
     df.loc[mask, "ml_confidence"] = 1.0
 
     return df.sort_values("skill_count", ascending=False)
-
-
-def build_skill_bundle_pairs(
-    skills_raw: pd.DataFrame,
-    sample_rows: int = 200_000,
-    top_pairs: int = 250,
-) -> pd.DataFrame:
-    pair_counts: Counter = Counter()
-    for i, cell in enumerate(skills_raw["job_skills"].tolist()):
-        if i >= sample_rows:
-            break
-        skills = sorted(set(parse_skill_list(cell)))
-        if len(skills) < 2:
-            continue
-        pair_counts.update(combinations(skills[:30], 2))
-    return pd.DataFrame(
-        [{"skill_a": a, "skill_b": b, "cooccur_count": c}
-         for (a, b), c in pair_counts.most_common(top_pairs)]
-    )
