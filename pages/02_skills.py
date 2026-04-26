@@ -7,7 +7,6 @@ import streamlit as st
 from components.charts import skills_frequency_chart
 from components.filters import sidebar_filters
 from data.db import PARQUET_S3_PATH, filter_conditions, get_db_connection
-from data.loader import R2_BUCKET
 
 st.set_page_config(page_title="Skills", layout="wide")
 st.title("Skills Analysis")
@@ -15,7 +14,6 @@ st.title("Skills Analysis")
 conn = get_db_connection()
 company, location = sidebar_filters(conn)
 
-_SKILL_BUNDLES_PATH = f"s3://{R2_BUCKET}/skill_bundles.parquet"
 _COOCCURRENCE_SAMPLE = 50_000
 _HEATMAP_SKILLS = 15
 
@@ -61,15 +59,6 @@ def get_top_cat_skills(
         .df()
         .set_index("skill")
     )
-
-
-@st.cache_data
-def get_cooccurrence_precomputed(_conn: object) -> pd.DataFrame:
-    return _conn.execute(f"""
-        SELECT skill_a, skill_b, cooccur_count
-        FROM read_parquet('{_SKILL_BUNDLES_PATH}')
-        ORDER BY cooccur_count DESC
-    """).df()
 
 
 @st.cache_data
@@ -148,17 +137,11 @@ st.bar_chart(get_top_cat_skills(conn, company, location, selected_cat))
 st.divider()
 
 st.subheader("Skill Co-occurrence Heatmap")
-if company == "All" and location == "All":
-    st.caption(
-        f"Top {_HEATMAP_SKILLS} skills by co-occurrence — precomputed from full dataset."  # noqa: E501
-    )
-    bundles = get_cooccurrence_precomputed(conn)
-else:
-    st.caption(
-        f"Top {_HEATMAP_SKILLS} skills by co-occurrence — "
-        f"sampled from up to {_COOCCURRENCE_SAMPLE:,} filtered postings."
-    )
-    bundles = get_cooccurrence_filtered(conn, company, location)
+st.caption(
+    f"Top {_HEATMAP_SKILLS} skills by co-occurrence — "
+    f"sampled from up to {_COOCCURRENCE_SAMPLE:,} postings."
+)
+bundles = get_cooccurrence_filtered(conn, company, location)
 
 pivot = _build_pivot(bundles, _HEATMAP_SKILLS)
 if pivot.empty:

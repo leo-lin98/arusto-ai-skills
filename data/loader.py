@@ -51,7 +51,8 @@ def _get_s3_client() -> boto3.client:
 def upload_parquet_with_md5_dedup(df: pd.DataFrame, key: str, s3: boto3.client) -> None:
     buf = io.BytesIO()
     df.to_parquet(buf, index=False, engine="pyarrow")
-    md5_hex = hashlib.md5(buf.getvalue()).hexdigest()
+    data = buf.getvalue()
+    md5_hex = hashlib.md5(data).hexdigest()
 
     try:
         head = s3.head_object(Bucket=R2_BUCKET, Key=key)
@@ -63,12 +64,7 @@ def upload_parquet_with_md5_dedup(df: pd.DataFrame, key: str, s3: boto3.client) 
             raise
 
     buf.seek(0)
-    s3.put_object(
-        Bucket=R2_BUCKET,
-        Key=key,
-        Body=buf.getvalue(),
-        Metadata={"md5": md5_hex},
-    )
+    s3.upload_fileobj(buf, R2_BUCKET, key, ExtraArgs={"Metadata": {"md5": md5_hex}})
     print(f"Uploaded {key} ({len(df):,} rows)")
 
 

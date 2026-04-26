@@ -43,7 +43,7 @@ class TestUploadParquetWithMd5Dedup:
 
         upload_parquet_with_md5_dedup(df, "test.parquet", s3)
 
-        s3.put_object.assert_called_once()
+        s3.upload_fileobj.assert_called_once()
 
     def test_uploaded_md5_matches_bytes(self):
         df = _make_df()
@@ -52,8 +52,8 @@ class TestUploadParquetWithMd5Dedup:
 
         upload_parquet_with_md5_dedup(df, "test.parquet", s3)
 
-        stored_md5 = s3.put_object.call_args[1]["Metadata"]["md5"]
-        assert stored_md5 == _md5_of_df(df)
+        extra_args = s3.upload_fileobj.call_args[1]["ExtraArgs"]
+        assert extra_args["Metadata"]["md5"] == _md5_of_df(df)
 
     def test_skips_on_md5_match(self):
         df = _make_df()
@@ -62,7 +62,7 @@ class TestUploadParquetWithMd5Dedup:
 
         upload_parquet_with_md5_dedup(df, "test.parquet", s3)
 
-        s3.put_object.assert_not_called()
+        s3.upload_fileobj.assert_not_called()
 
     def test_uploads_on_md5_mismatch(self):
         df = _make_df()
@@ -71,9 +71,9 @@ class TestUploadParquetWithMd5Dedup:
 
         upload_parquet_with_md5_dedup(df, "test.parquet", s3)
 
-        s3.put_object.assert_called_once()
-        stored_md5 = s3.put_object.call_args[1]["Metadata"]["md5"]
-        assert stored_md5 == _md5_of_df(df)
+        s3.upload_fileobj.assert_called_once()
+        extra_args = s3.upload_fileobj.call_args[1]["ExtraArgs"]
+        assert extra_args["Metadata"]["md5"] == _md5_of_df(df)
 
     def test_uploads_when_metadata_key_missing(self):
         df = _make_df()
@@ -82,7 +82,7 @@ class TestUploadParquetWithMd5Dedup:
 
         upload_parquet_with_md5_dedup(df, "test.parquet", s3)
 
-        s3.put_object.assert_called_once()
+        s3.upload_fileobj.assert_called_once()
 
     def test_reraises_non_404_client_error(self):
         df = _make_df()
