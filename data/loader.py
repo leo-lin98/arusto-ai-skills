@@ -8,9 +8,6 @@ import boto3
 import pandas as pd
 from botocore.exceptions import ClientError
 
-R2_ENDPOINT = "https://a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com"
-R2_BUCKET = "arusto-skills"
-
 
 def _get_r2_credentials() -> tuple[str, str]:
     key_id = os.environ.get("R2_ACCESS_KEY_ID")
@@ -41,7 +38,7 @@ def _get_s3_client() -> boto3.client:
     key_id, secret = _get_r2_credentials()
     return boto3.client(
         "s3",
-        endpoint_url=R2_ENDPOINT,
+        endpoint_url=os.environ.get("R2_ENDPOINT"),
         aws_access_key_id=key_id,
         aws_secret_access_key=secret,
         region_name="auto",
@@ -57,7 +54,7 @@ def upload_parquet_with_md5_dedup(
     md5_hex = hashlib.md5(data).hexdigest()
 
     try:
-        head = s3.head_object(Bucket=R2_BUCKET, Key=key)
+        head = s3.head_object(Bucket=os.environ.get("R2_BUCKET"), Key=key)
         if head.get("Metadata", {}).get("md5") == md5_hex:
             print(f"Skipping {key} (md5 match)")
             return
@@ -67,7 +64,7 @@ def upload_parquet_with_md5_dedup(
 
     buf.seek(0)
     metadata = {"md5": md5_hex, **extra_metadata}
-    s3.upload_fileobj(buf, R2_BUCKET, key, ExtraArgs={"Metadata": metadata})
+    s3.upload_fileobj(buf, os.environ.get("R2_BUCKET"), key, ExtraArgs={"Metadata": metadata})
     print(f"Uploaded {key} ({len(df):,} rows)")
 
 
