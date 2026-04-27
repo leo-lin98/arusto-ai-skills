@@ -1,3 +1,4 @@
+import os
 from datetime import date
 
 import duckdb
@@ -5,8 +6,8 @@ import streamlit as st
 
 from data.loader import _get_r2_credentials
 
-_R2_ENDPOINT_HOST = "a9e4828e0e2c14c92a0618cded4bf6b6.r2.cloudflarestorage.com"
-_R2_BUCKET = "arusto-skills"
+_R2_ENDPOINT_HOST = os.environ.get("R2_ENDPOINT")
+_R2_BUCKET = os.environ.get("R2_BUCKET")
 PARQUET_S3_PATH = f"s3://{_R2_BUCKET}/jobs.parquet"
 TOPIC_RANKINGS_S3_PATH = f"s3://{_R2_BUCKET}/topic_rankings.parquet"
 SKILL_THEME_MAP_S3_PATH = f"s3://{_R2_BUCKET}/skill_theme_map.parquet"
