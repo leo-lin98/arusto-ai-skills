@@ -6,8 +6,8 @@ import streamlit as st
 
 from data.loader import _get_r2_credentials
 
-_R2_ENDPOINT_HOST = os.environ.get("R2_ENDPOINT")
-_R2_BUCKET = os.environ.get("R2_BUCKET")
+_R2_ENDPOINT_HOST = os.environ.get("R2_ENDPOINT", "c289fdab43b5ed1ce5f8f61ddad661c8.r2.cloudflarestorage.com")
+_R2_BUCKET = os.environ.get("R2_BUCKET", "arusto-skills")
 PARQUET_S3_PATH = f"s3://{_R2_BUCKET}/jobs.parquet"
 TOPIC_RANKINGS_S3_PATH = f"s3://{_R2_BUCKET}/topic_rankings.parquet"
 SKILL_THEME_MAP_S3_PATH = f"s3://{_R2_BUCKET}/skill_theme_map.parquet"
