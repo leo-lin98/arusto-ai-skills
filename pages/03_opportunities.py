@@ -17,7 +17,7 @@ def get_all_topics(_conn: object) -> pd.DataFrame:
     return _conn.execute(
         f"""
         SELECT
-            search_position,
+            course_topic,
             course_opportunity_score,
             opportunity_label,
             volume,
@@ -47,7 +47,7 @@ st.divider()
 
 search = st.text_input("Search topic", placeholder="e.g. Python, Data Science")
 filtered = (
-    topics[topics["search_position"].str.contains(search, case=False, na=False)]
+    topics[topics["course_topic"].str.contains(search, case=False, na=False)]
     if search
     else topics
 )
@@ -59,7 +59,7 @@ top15.index.name = "Rank"
 st.dataframe(
     top15.rename(
         columns={
-            "search_position": "Topic",
+            "course_topic": "Topic",
             "course_opportunity_score": "Score",
             "opportunity_label": "Label",
             "volume": "Volume",
@@ -98,7 +98,7 @@ else:
                 scale=alt.Scale(scheme="category10"),
             ),
             tooltip=[
-                alt.Tooltip("search_position:N", title="Topic"),
+                alt.Tooltip("course_topic:N", title="Topic"),
                 alt.Tooltip("course_opportunity_score:Q", title="Score", format=".1f"),
                 alt.Tooltip("volume:Q", title="Volume", format=","),
                 alt.Tooltip("trend_label:N", title="Trend"),
