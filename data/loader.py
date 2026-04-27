@@ -25,7 +25,7 @@ def _get_r2_credentials() -> tuple[str, str]:
         if key_id and secret:
             return key_id, secret
 
-    except (ImportError, FileNotFoundError, KeyError):
+    except ImportError, FileNotFoundError, KeyError:
         pass
 
     raise OSError(
@@ -34,11 +34,21 @@ def _get_r2_credentials() -> tuple[str, str]:
     )
 
 
+_R2_BUCKET: str = os.environ.get("R2_BUCKET", "arusto-skills")
+_R2_ENDPOINT_DEFAULT = "c289fdab43b5ed1ce5f8f61ddad661c8.r2.cloudflarestorage.com"
+_R2_ENDPOINT: str = (
+    os.environ.get("R2_ENDPOINT", _R2_ENDPOINT_DEFAULT)
+    .removeprefix("https://")
+    .removeprefix("http://")
+)
+_R2_ENDPOINT_URL: str = f"https://{_R2_ENDPOINT}"
+
+
 def _get_s3_client() -> boto3.client:
     key_id, secret = _get_r2_credentials()
     return boto3.client(
         "s3",
-        endpoint_url=os.environ.get("R2_ENDPOINT"),
+        endpoint_url=_R2_ENDPOINT_URL,
         aws_access_key_id=key_id,
         aws_secret_access_key=secret,
         region_name="auto",
@@ -54,7 +64,7 @@ def upload_parquet_with_md5_dedup(
     md5_hex = hashlib.md5(data).hexdigest()
 
     try:
-        head = s3.head_object(Bucket=os.environ.get("R2_BUCKET"), Key=key)
+        head = s3.head_object(Bucket=_R2_BUCKET, Key=key)
         if head.get("Metadata", {}).get("md5") == md5_hex:
             print(f"Skipping {key} (md5 match)")
             return
@@ -64,7 +74,7 @@ def upload_parquet_with_md5_dedup(
 
     buf.seek(0)
     metadata = {"md5": md5_hex, **extra_metadata}
-    s3.upload_fileobj(buf, os.environ.get("R2_BUCKET"), key, ExtraArgs={"Metadata": metadata})
+    s3.upload_fileobj(buf, _R2_BUCKET, key, ExtraArgs={"Metadata": metadata})
     print(f"Uploaded {key} ({len(df):,} rows)")
 
 
@@ -78,7 +88,7 @@ def download_kaggle_data(dest_dir: str) -> None:
 
             os.environ["KAGGLE_USERNAME"] = st.secrets["KAGGLE_USERNAME"]
             os.environ["KAGGLE_KEY"] = st.secrets["KAGGLE_KEY"]
-        except (ImportError, FileNotFoundError, KeyError):
+        except ImportError, FileNotFoundError, KeyError:
             pass
 
     api = KaggleApi()

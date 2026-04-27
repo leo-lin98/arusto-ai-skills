@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,7 +11,6 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 from data.loader import (
-    R2_BUCKET,
     _get_s3_client,
     download_kaggle_data,
     upload_parquet_with_md5_dedup,
@@ -23,6 +23,8 @@ from data.processor import (
     score_topics,
     train_skill_theme_model,
 )
+
+R2_BUCKET: str = os.environ.get("R2_BUCKET", "arusto-skills")
 
 
 @contextmanager
@@ -58,7 +60,6 @@ def main() -> None:
         return
 
     with tempfile.TemporaryDirectory() as tmpdir:
-
         with timed("Download Kaggle dataset"):
             download_kaggle_data(tmpdir)
 
@@ -81,8 +82,8 @@ def main() -> None:
         print(f"     {len(topic_rankings):,} qualifying topics")
 
         uploads = [
-            (featured,        "jobs.parquet",           {"config_hash": config_hash}),
-            (topic_rankings,  "topic_rankings.parquet",  {}),
+            (featured, "jobs.parquet", {"config_hash": config_hash}),
+            (topic_rankings, "topic_rankings.parquet", {}),
             (skill_theme_map, "skill_theme_map.parquet", {}),
         ]
 
