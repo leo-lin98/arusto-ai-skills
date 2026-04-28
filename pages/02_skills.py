@@ -172,9 +172,9 @@ skills_frequency_chart(conn, n)
 
 st.divider()
 
-st.subheader("Skills Breakdown by Category")
+st.subheader("Skills Breakdown by Competency Area")
 categories = get_categories(conn)
-selected_cat = st.selectbox("Category", ["All"] + categories)
+selected_cat = st.selectbox("Competency Area", ["All"] + categories)
 _cat_df = get_top_cat_skills(conn, selected_cat).reset_index()
 st.altair_chart(
     alt.Chart(_cat_df)
@@ -210,14 +210,14 @@ else:
 
 st.divider()
 
-st.subheader("Skill × Job Category Heatmap")
+st.subheader("Skill × Competency Area Heatmap")
 st.caption(
-    f"Top {_HEATMAP_SKILLS} skills (by overall frequency) × job categories — "
+    f"Top {_HEATMAP_SKILLS} skills (by overall frequency) × competency areas — "
     f"sampled from up to {_THEME_HEATMAP_SAMPLE:,} postings."
 )
 theme_pivot = get_skill_theme_matrix(conn)
 if theme_pivot.empty:
-    st.info("Not enough data to render skill × category heatmap.")
+    st.info("Not enough data to render skill × competency area heatmap.")
 else:
     st.dataframe(
         theme_pivot.style.background_gradient(cmap="Oranges"),
