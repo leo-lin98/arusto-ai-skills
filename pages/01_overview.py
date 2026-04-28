@@ -5,11 +5,25 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-from components.charts import top_companies_chart
+from components.charts import CATEGORICAL_SCHEME, SEQUENTIAL_SCHEME, top_companies_chart
 from components.filters import sidebar_filters
 from data.db import PARQUET_S3_PATH, filter_conditions, get_db_connection
 
 st.set_page_config(page_title="Overview", layout="wide")
+st.markdown(
+    """
+    <style>
+    [data-testid="metric-container"] {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 6px rgba(157,78,221,0.15);
+        border-left: 4px solid #9D4EDD;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 st.title("Overview")
 
 conn = get_db_connection()
@@ -208,20 +222,56 @@ st.altair_chart(
     .encode(
         x=alt.X("job_title:N", sort=None, title="Job Title"),
         y=alt.Y("Listings:Q", title="Listings"),
+        color=alt.Color(
+            "Listings:Q",
+            scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+            legend=None,
+        ),
     ),
     width="stretch",
 )
 
 st.subheader("Job Postings by Day of Week")
-st.bar_chart(
-    get_day_of_week(conn, company, country, date_range).reindex(day_order).fillna(0)
+_dow_df = (
+    get_day_of_week(conn, company, country, date_range)
+    .reindex(day_order)
+    .fillna(0)
+    .reset_index()
+)
+st.altair_chart(
+    alt.Chart(_dow_df)
+    .mark_bar()
+    .encode(
+        x=alt.X("day_of_week:N", sort=None, title="Day"),
+        y=alt.Y("Postings:Q", title="Postings"),
+        color=alt.Color(
+            "day_of_week:N",
+            scale=alt.Scale(scheme=CATEGORICAL_SCHEME),
+            legend=None,
+        ),
+    ),
+    width="stretch",
 )
 
 st.subheader("Top 10 Companies by Job Count")
 top_companies_chart(conn, 10, company, country, date_range)
 
 st.subheader("Job Level Distribution")
-st.bar_chart(get_job_level(conn, company, country, date_range))
+_level_df = get_job_level(conn, company, country, date_range).reset_index()
+st.altair_chart(
+    alt.Chart(_level_df)
+    .mark_bar()
+    .encode(
+        x=alt.X("job_level:N", sort=None, title="Job Level"),
+        y=alt.Y("Postings:Q", title="Postings"),
+        color=alt.Color(
+            "job_level:N",
+            scale=alt.Scale(scheme=CATEGORICAL_SCHEME),
+            legend=None,
+        ),
+    ),
+    width="stretch",
+)
 
 st.subheader("Top 10 Job Locations")
 _loc_df = get_top_locations(conn, company, country, date_range).reset_index()
@@ -231,6 +281,11 @@ st.altair_chart(
     .encode(
         x=alt.X("search_city:N", sort=None, title="City"),
         y=alt.Y("Postings:Q", title="Postings"),
+        color=alt.Color(
+            "Postings:Q",
+            scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+            legend=None,
+        ),
     ),
     width="stretch",
 )
@@ -241,11 +296,28 @@ if len(days) < 2:
     st.info("Not enough date data to render distribution.")
 else:
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.violinplot(days, vert=False)
+    parts = ax.violinplot(days, vert=False)
+    for body in parts["bodies"]:
+        body.set_facecolor("#9D4EDD")
+        body.set_alpha(0.7)
     ax.set_xlabel("Day of Month")
     ax.set_title("Distribution of Job Openings by Day of Month")
     st.pyplot(fig)
     plt.close(fig)
 
 st.subheader("Search Position Distribution")
-st.bar_chart(get_search_positions(conn, company, country, date_range))
+_pos_df = get_search_positions(conn, company, country, date_range).reset_index()
+st.altair_chart(
+    alt.Chart(_pos_df)
+    .mark_bar()
+    .encode(
+        x=alt.X("search_position:N", sort=None, title="Search Position"),
+        y=alt.Y("Postings:Q", title="Postings"),
+        color=alt.Color(
+            "Postings:Q",
+            scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+            legend=None,
+        ),
+    ),
+    width="stretch",
+)

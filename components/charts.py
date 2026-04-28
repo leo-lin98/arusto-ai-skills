@@ -6,6 +6,13 @@ import streamlit as st
 
 from data.db import PARQUET_S3_PATH, filter_conditions
 
+SEQUENTIAL_SCHEME = "purpleblue"
+CATEGORICAL_SCHEME = "tableau10"
+OPPORTUNITY_COLORS = {
+    "domain": ["High Opportunity", "Emerging", "Saturated"],
+    "range": ["#2ecc71", "#f39c12", "#95a5a6"],
+}
+
 
 def top_companies_chart(
     conn: duckdb.DuckDBPyConnection,
@@ -31,6 +38,11 @@ def top_companies_chart(
         .encode(
             x=alt.X("company:N", sort=None, title="Company"),
             y=alt.Y("Job Postings:Q", title="Job Postings"),
+            color=alt.Color(
+                "Job Postings:Q",
+                scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+                legend=None,
+            ),
         )
     )
     st.altair_chart(chart, width="stretch")
@@ -55,6 +67,11 @@ def skills_frequency_chart(conn: duckdb.DuckDBPyConnection, n: int) -> None:
         .encode(
             x=alt.X("skill:N", sort=None, title="Skill"),
             y=alt.Y("Count:Q", title="Count"),
+            color=alt.Color(
+                "Count:Q",
+                scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+                legend=None,
+            ),
         )
     )
     st.altair_chart(chart, width="stretch")

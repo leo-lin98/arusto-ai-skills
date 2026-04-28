@@ -4,6 +4,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from components.charts import CATEGORICAL_SCHEME, OPPORTUNITY_COLORS, SEQUENTIAL_SCHEME
 from data.db import (
     PARQUET_S3_PATH,
     SKILL_THEME_MAP_S3_PATH,
@@ -12,6 +13,20 @@ from data.db import (
 )
 
 st.set_page_config(page_title="Course Opportunity", layout="wide")
+st.markdown(
+    """
+    <style>
+    [data-testid="metric-container"] {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 6px rgba(157,78,221,0.15);
+        border-left: 4px solid #9D4EDD;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 st.title("Course Opportunity Dashboard")
 st.caption('Anchor question: "What courses should institutions build next?"')
 
@@ -257,6 +272,11 @@ with tabs[0]:
             .encode(
                 x=alt.X("skill:N", sort=None, title="Skill"),
                 y=alt.Y("skill_count:Q", title="Count"),
+                color=alt.Color(
+                    "skill_count:Q",
+                    scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+                    legend=None,
+                ),
             )
             .properties(height=400),
             use_container_width=True,
@@ -271,6 +291,14 @@ with tabs[0]:
             .encode(
                 x=alt.X("course_topic:N", sort=None, title="Course Topic"),
                 y=alt.Y("course_opportunity_score:Q", title="Opportunity Score"),
+                color=alt.Color(
+                    "opportunity_label:N",
+                    scale=alt.Scale(
+                        domain=OPPORTUNITY_COLORS["domain"],
+                        range=OPPORTUNITY_COLORS["range"],
+                    ),
+                    title="Label",
+                ),
             )
             .properties(height=400),
             use_container_width=True,
@@ -278,12 +306,25 @@ with tabs[0]:
 
     st.divider()
     st.subheader("Volume vs salary proxy (top 100 topics)")
-    st.scatter_chart(
-        get_volume_vs_salary(),
-        x="volume",
-        y="salary_proxy",
-        color="opportunity_label",
-        size="breadth_score",
+    _scatter_df = get_volume_vs_salary()
+    st.altair_chart(
+        alt.Chart(_scatter_df)
+        .mark_circle()
+        .encode(
+            x=alt.X("volume:Q", title="Volume"),
+            y=alt.Y("salary_proxy:Q", title="Salary Proxy"),
+            color=alt.Color(
+                "opportunity_label:N",
+                scale=alt.Scale(
+                    domain=OPPORTUNITY_COLORS["domain"],
+                    range=OPPORTUNITY_COLORS["range"],
+                ),
+                title="Label",
+            ),
+            size=alt.Size("breadth_score:Q", legend=None),
+            tooltip=["course_topic", "volume", "salary_proxy", "opportunity_label"],
+        ),
+        width="stretch",
     )
 
     st.divider()
@@ -297,8 +338,20 @@ with tabs[0]:
             "No trend signal — dataset lacks sufficient temporal spread for OLS fit."
         )
     else:
-        st.bar_chart(
-            trend_df.set_index("course_topic")["trend_slope"].astype(float), height=300
+        st.altair_chart(
+            alt.Chart(trend_df)
+            .mark_bar()
+            .encode(
+                x=alt.X("course_topic:N", sort=None, title="Course Topic"),
+                y=alt.Y("trend_slope:Q", title="Slope (postings/week)"),
+                color=alt.Color(
+                    "trend_slope:Q",
+                    scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+                    legend=None,
+                ),
+            )
+            .properties(height=300),
+            width="stretch",
         )
 
     st.divider()
@@ -334,9 +387,20 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("Skill theme breakdown — total mentions per theme")
     theme_counts = get_theme_counts(min_conf)
-    st.bar_chart(
-        theme_counts.set_index("ml_theme")["total_mentions"].astype(float),
-        height=350,
+    st.altair_chart(
+        alt.Chart(theme_counts)
+        .mark_bar()
+        .encode(
+            x=alt.X("ml_theme:N", sort=None, title="Theme"),
+            y=alt.Y("total_mentions:Q", title="Total Mentions"),
+            color=alt.Color(
+                "ml_theme:N",
+                scale=alt.Scale(scheme=CATEGORICAL_SCHEME),
+                legend=None,
+            ),
+        )
+        .properties(height=350),
+        width="stretch",
     )
 
     st.divider()

@@ -5,10 +5,24 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from components.charts import skills_frequency_chart
+from components.charts import SEQUENTIAL_SCHEME, skills_frequency_chart
 from data.db import PARQUET_S3_PATH, SKILL_THEME_MAP_S3_PATH, get_db_connection
 
 st.set_page_config(page_title="Skills", layout="wide")
+st.markdown(
+    """
+    <style>
+    [data-testid="metric-container"] {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 6px rgba(157,78,221,0.15);
+        border-left: 4px solid #9D4EDD;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 st.title("Skills Analysis")
 
 conn = get_db_connection()
@@ -168,6 +182,11 @@ st.altair_chart(
     .encode(
         x=alt.X("skill:N", sort=None, title="Skill"),
         y=alt.Y("Count:Q", title="Count"),
+        color=alt.Color(
+            "Count:Q",
+            scale=alt.Scale(scheme=SEQUENTIAL_SCHEME),
+            legend=None,
+        ),
     ),
     width="stretch",
 )
@@ -185,7 +204,7 @@ if pivot.empty:
     st.info("Not enough co-occurrence data to render heatmap.")
 else:
     st.dataframe(
-        pivot.style.background_gradient(cmap="Blues"),
+        pivot.style.background_gradient(cmap="Purples"),
         width="stretch",
     )
 
