@@ -405,13 +405,13 @@ _BENEFITS_NOISE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bbereavement\b"),
     re.compile(r"\bjury duty\b"),
     re.compile(r"\bleave(s)? of absence\b"),
-    re.compile(r"\bloa\b"),
+    re.compile(r"^loa$"),
     re.compile(r"\bbenefits?\b"),
     re.compile(r"\bbenefits package\b"),
     re.compile(r"\bhealth insurance\b"),
     re.compile(r"\bhealth coverage\b"),
     re.compile(r"\bdental\b"),
-    re.compile(r"\bvision\b"),
+    re.compile(r"^vision$"),
     re.compile(r"\blife insurance\b"),
     re.compile(r"\bdisability insurance\b"),
     re.compile(r"\bshort[-\s]?term disability\b"),
@@ -424,10 +424,10 @@ _BENEFITS_NOISE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bretirement\b"),
     re.compile(r"\bpension\b"),
     re.compile(r"\bprofit\s*sharing\b"),
-    re.compile(r"\bmatching\b"),
+    re.compile(r"^matching$"),
     re.compile(r"\bstock purchase\b"),
     re.compile(r"\bsign[-\s]?on bonus\b"),
-    re.compile(r"\breferral bonus\b"),
+    re.compile(r"\breferral\b"),
     re.compile(r"\bbonuses\b"),
     re.compile(r"\bbonus\b"),
     re.compile(r"\bcommission(s|ed)?\b"),
@@ -436,7 +436,7 @@ _BENEFITS_NOISE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\bvolunteer(ing)? days?\b"),
     re.compile(r"\btuition (reimbursement|assistance)\b"),
     re.compile(r"\beducation reimbursement\b"),
-    re.compile(r"\brelocation (assistance|package)\b"),
+    re.compile(r"\brelocation\b"),
     re.compile(r"\bemployee assistance program\b"),
     re.compile(r"\bgym reimbursement\b"),
     re.compile(r"\bcompany (car|phone|laptop)\b"),
@@ -444,7 +444,7 @@ _BENEFITS_NOISE_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"\ballowance\b"),
     re.compile(r"\bfull[-\s]?time\b"),
     re.compile(r"\bpart[-\s]?time\b"),
-    re.compile(r"\bremote\b"),
+    re.compile(r"^remote$"),
     re.compile(r"\bhybrid\b"),
     re.compile(r"\bon[-\s]?site\b"),
     re.compile(r"\bflexible schedule\b"),
@@ -860,7 +860,8 @@ def score_topics(df: pd.DataFrame) -> pd.DataFrame:
         + W_SENIOR * pos["senior_rate"]
     )
 
-    pos["volume_score"] = minmax_norm(pos["volume"])
+    pos["log_volume"] = np.log1p(pos["volume"])
+    pos["volume_score"] = minmax_norm(pos["log_volume"])
     pos["salary_score"] = minmax_norm(pos["salary_proxy"])
     pos["breadth_score"] = W_CITY * minmax_norm(
         pos["city_count"]

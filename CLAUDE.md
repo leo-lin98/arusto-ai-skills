@@ -75,10 +75,10 @@ Kaggle dataset: `asaniczka/1-3m-linkedin-jobs-and-skills-2024`. Downloaded direc
 
 **Speed caches** (regenerable from `jobs.parquet`):
 
-- `topic_rankings.parquet` — per-`search_position` aggregates with score + OLS trend.
+- `topic_rankings.parquet` — per-`job_role` aggregates with score + 30d trend.
 - `skill_theme_map.parquet` — top 5k skills with ML-assigned theme + confidence.
 
-3 parquets total, all in Cloudflare R2 bucket `arusto-skills/`.
+3 base parquets + 6 breakdown parquets = 9 total, all in Cloudflare R2 bucket `arusto-skills/`.
 
 ## Offline Pipeline (`python -m data.pipeline`)
 
@@ -86,33 +86,37 @@ Kaggle dataset: `asaniczka/1-3m-linkedin-jobs-and-skills-2024`. Downloaded direc
 2. `get_merged()` — load full 1.3M postings, merge skills + summary — no local disk write.
 3. `train_skill_theme_model()` — TF-IDF char-ngram + SGD on top 8k skills.
 4. `build_features()` — derive columns + assign category via seed keyword + SGD on `search_position`.
-5. `score_topics()` — per-topic aggregates + course opportunity score + OLS trend forecast (4w + 12w).
+5. `score_topics()` — per-topic aggregates + course opportunity score + 30d trend delta.
 6. `build_skill_theme_map(top_n=5000)` — ML-predicted theme for top skills.
-7. Stream three parquets to Cloudflare R2 via MD5-dedup upload.
+7. Stream 9 parquets to Cloudflare R2 via MD5-dedup upload (parallel, max 4 workers).
 
 ### build_features() outputs
 
 - `job_title_len`, `n_skills`, `combined_text`, `skills_norm` (comma-separated string)
 - `category` — weakly supervised: seed keywords → TF-IDF char-ngram + SGD classifier (9 themes + "Domain / Other")
 
-### score_topics() outputs (per search_position)
+### score_topics() outputs (per job_role)
 
 - `volume`, `log_volume`, `salary_proxy`, `breadth_score`
 - `course_opportunity_score` — `0.40·minmax(log1p(volume)) + 0.35·minmax(salary_proxy) + 0.25·breadth`
   - `salary_proxy` = `0.40·remote_rate + 0.25·hybrid_rate + 0.35·senior_rate`
   - `breadth` = `0.50·minmax(city_count) + 0.50·minmax(company_count)`
 - `opportunity_label` — High Opportunity (≥60) / Emerging (≥40) / Saturated (<40)
-- `trend_slope`, `trend_r2`, `forecast_4w`, `forecast_12w`, `trend_label` — OLS on weekly counts
-  - `trend_label`: `Growing` / `Declining` / `Stable` / `Insufficient data`
-  - Defaults: `R2_THRESHOLD=0.30`, `SLOPE_THRESHOLD=1.0` (TODO: workshop against data percentiles)
+- `trend_30d` — posting count delta: last 30d vs prior 30d window
 
 ### Parquets written to R2 (`arusto-skills/`)
 
-| File                      | Contents                                               |
-| ------------------------- | ------------------------------------------------------ |
-| `jobs.parquet`            | Full merged + featured 1.3M postings (source of truth) |
-| `topic_rankings.parquet`  | Ranked course topics with scores + trend forecast      |
-| `skill_theme_map.parquet` | Top 5k skills → theme (ML predictions)                 |
+| File                           | Contents                                               |
+| ------------------------------ | ------------------------------------------------------ |
+| `jobs.parquet`                 | Full merged + featured 1.3M postings (source of truth) |
+| `topic_rankings.parquet`       | Ranked job roles with scores + 30d trend               |
+| `skill_theme_map.parquet`      | Top 5k skills → theme (ML + rule predictions)          |
+| `topic_country_volume.parquet` | Per-role posting volume by country                     |
+| `topic_type_volume.parquet`    | Per-role posting volume by job type                    |
+| `topic_level_volume.parquet`   | Per-role posting volume by job level                   |
+| `topic_theme_mix.parquet`      | Per-role skill theme share breakdown                   |
+| `skill_bundle_pairs.parquet`   | Top 250 skill co-occurrence pairs                      |
+| `location_toplists.parquet`    | Top-25 cities, states, and countries                   |
 
 ## MD5 Upload Dedup
 
@@ -148,8 +152,8 @@ Custom metadata is used (not S3 ETag) so multipart uploads work transparently. m
 
 ### Page 3 — Course Opportunities
 
-- Top-15 ranked table: rank, topic, score, label, volume, forecast_4w, forecast_12w, trend_label.
-- Scatter: volume vs score, color = trend_label.
+- Top-15 ranked table: rank, job_role, score, label, volume, salary_proxy, breadth_score, trend_30d.
+- Scatter: volume vs score.
 - Topic search box.
 
 ## Seed Keywords (SEED_KEYWORDS)
