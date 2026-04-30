@@ -4,11 +4,10 @@ Acceptance criteria:
 - log_volume == log1p(volume) exactly.
 - course_opportunity_score is in [0, 100].
 - opportunity_label is in {High Opportunity, Emerging, Saturated}.
-- trend_label is in {Growing, Declining, Stable, Insufficient data}.
+- trend_30d contains no NaN.
+- When all first_seen are null, every row gets trend_30d == 0.0.
 - rank starts at 1 and is strictly ascending.
 - Rows sorted by course_opportunity_score descending.
-- trend_slope, trend_r2, trend_label contain no NaN.
-- When all first_seen are null, every row gets trend_label = "Insufficient data".
 """
 
 from __future__ import annotations
@@ -22,20 +21,15 @@ from data.processor import score_topics
 
 _REQUIRED_COLS = {
     "rank",
-    "course_topic",
+    "job_role",
     "volume",
     "log_volume",
     "course_opportunity_score",
     "opportunity_label",
-    "trend_slope",
-    "trend_r2",
-    "forecast_4w",
-    "forecast_12w",
-    "trend_label",
+    "trend_30d",
 }
 
 _VALID_OPP_LABELS = {"High Opportunity", "Emerging", "Saturated"}
-_VALID_TREND_LABELS = {"Growing", "Declining", "Stable", "Insufficient data"}
 
 
 def _make_featured(
@@ -94,9 +88,9 @@ class TestScoreTopics:
         result = score_topics(_make_featured())
         assert set(result["opportunity_label"].unique()).issubset(_VALID_OPP_LABELS)
 
-    def test_trend_label_values(self):
+    def test_trend_30d_no_nan(self):
         result = score_topics(_make_featured())
-        assert set(result["trend_label"].unique()).issubset(_VALID_TREND_LABELS)
+        assert result["trend_30d"].isna().sum() == 0
 
     def test_rank_starts_at_one(self):
         result = score_topics(_make_featured())
@@ -110,18 +104,11 @@ class TestScoreTopics:
         result = score_topics(_make_featured())
         assert result["course_opportunity_score"].is_monotonic_decreasing
 
-    def test_no_nan_in_trend_slope_r2_label(self):
-        result = score_topics(_make_featured())
-        for col in ("trend_slope", "trend_r2", "trend_label"):
-            assert result[col].isna().sum() == 0, f"NaN found in {col}"
-
-    def test_all_insufficient_when_no_dates(self):
+    def test_trend_30d_zero_when_no_dates(self):
         df = _make_featured()
         df["first_seen"] = pd.NaT
         result = score_topics(df)
-        assert (result["trend_label"] == "Insufficient data").all()
-        assert (result["trend_slope"] == 0.0).all()
-        assert (result["trend_r2"] == 0.0).all()
+        assert (result["trend_30d"] == 0.0).all()
 
     def test_volume_below_min_volume_filtered(self):
         df = _make_featured(n_per_position=3, n_positions=2)
