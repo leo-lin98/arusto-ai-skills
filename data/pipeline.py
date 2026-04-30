@@ -18,9 +18,13 @@ from data.loader import (
 from data.processor import (
     build_features,
     build_skill_theme_map,
+    compute_location_toplists,
     get_merged,
     pipeline_config_hash,
     score_topics,
+    skill_bundle_pairs,
+    topic_breakdowns,
+    topic_theme_mix,
     train_skill_theme_model,
 )
 
@@ -70,25 +74,46 @@ def main() -> None:
         with timed("Train skill theme model"):
             vec, clf = train_skill_theme_model(skills_raw)
 
-        with timed("Build features + derived tables (parallel)"):
+        with timed("Build features + derived tables"):
             with ThreadPoolExecutor(max_workers=2) as pool:
                 fut_themes = pool.submit(build_skill_theme_map, skills_raw, vec, clf)
-
                 featured = build_features(merged, vec, clf)
                 topic_rankings = score_topics(featured)
-
                 skill_theme_map = fut_themes.result()
 
         print(f"     {len(topic_rankings):,} qualifying topics")
+        top_roles = topic_rankings["job_role"].astype(str).tolist()
+
+        with timed("Build breakdown tables"):
+            by_country, by_type, by_level = topic_breakdowns(featured, top_roles)
+            location_toplists = compute_location_toplists(featured)
+
+        with timed("Build topic theme mix"):
+            skill_to_theme = dict(
+                zip(
+                    skill_theme_map["skill"].astype(str),
+                    skill_theme_map["ml_theme"].astype(str),
+                )
+            )
+            theme_mix = topic_theme_mix(featured, skills_raw, top_roles, skill_to_theme)
+
+        with timed("Build skill bundle pairs"):
+            bundles = skill_bundle_pairs(skills_raw)
 
         uploads = [
             (featured, "jobs.parquet", {"config_hash": config_hash}),
             (topic_rankings, "topic_rankings.parquet", {}),
             (skill_theme_map, "skill_theme_map.parquet", {}),
+            (by_country, "topic_country_volume.parquet", {}),
+            (by_type, "topic_type_volume.parquet", {}),
+            (by_level, "topic_level_volume.parquet", {}),
+            (theme_mix, "topic_theme_mix.parquet", {}),
+            (bundles, "skill_bundle_pairs.parquet", {}),
+            (location_toplists, "location_toplists.parquet", {}),
         ]
 
         with timed("Upload to R2 (parallel, md5 dedup)"):
-            with ThreadPoolExecutor(max_workers=3) as pool:
+            with ThreadPoolExecutor(max_workers=4) as pool:
                 futures = {pool.submit(_upload, args): args[1] for args in uploads}
                 for fut in as_completed(futures):
                     exc = fut.exception()
